@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}{{ t('nav.team') }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div><div class="eyebrow">{{ t('team.subtitle') }}</div><h1>{{ t('nav.team') }}</h1></div>
+</header>
+
+<section class="kpis" aria-label="{{ t('team.summary') }}">
+  <div class="kpi"><span class="label">{{ t('team.active') }}</span><span class="value">{{ stats.active }}</span></div>
+  <div class="kpi"><span class="label">{{ t('team.admins') }}</span><span class="value">{{ stats.admins }}</span></div>
+  <div class="kpi"><span class="label">{{ t('team.agents') }}</span><span class="value">{{ stats.agents }}</span></div>
+  <div class="kpi"><span class="label">{{ t('team.pending') }}</span><span class="value">{{ stats.pending }}</span></div>
+</section>
+
+<section class="card" aria-labelledby="members">
+  <div class="card-head"><h2 id="members">{{ t('team.members') }}</h2><span class="muted" style="font-size:14px">{{ t('team.members_help') }}</span></div>
+  <div class="table-wrap"><table class="data" style="min-width:900px">
+    <thead><tr><th>{{ t('team.member') }}</th><th>{{ t('team.role') }}</th><th>{{ t('team.sites') }}</th><th>{{ t('team.last_login') }}</th><th>{{ t('col.status') }}</th><th></th></tr></thead>
+    <tbody>
+    {% for m in members %}
+      {% set me = m.id == user.id %}
+      <tr {% if not m.is_active %}class="muted"{% endif %}>
+        <td><div class="person"><span class="avatar" aria-hidden="true">{{ (m.full_name.split(' ')|map('first')|join(''))[:2]|upper }}</span><span><b>{{ m.full_name }}{% if me %} ({{ t('team.you') }}){% endif %}</b><span class="sub-line">{{ m.email }}</span></span></div></td>
+        <td>
+          {% if can('manage_team') and not me %}
+          <select class="input" style="min-height:40px;width:auto" aria-label="{{ t('team.role_of', name=m.full_name) }}"
+                  onchange="this.dataset.body=JSON.stringify({role:this.value});this.dataset.api='PATCH /api/v1/team/{{ m.id }}';this.click()">
+            {% for r in ['admin', 'manager', 'agent', 'viewer'] %}<option value="{{ r }}" {% if m.role == r %}selected{% endif %}>{{ t('role.' ~ r) }}</option>{% endfor %}
+          </select>
+          {% else %}{{ t('role.' ~ m.role) }}{% endif %}
+        </td>
+        <td>{{ m.site_codes|join(', ') if m.site_codes else t('team.all_sites') }}</td>
+        <td>{{ fdt(m.last_login_at) if m.last_login_at else t('team.never') }}</td>
+        <td><span class="badge {{ 'dashed' if m.pending_invitation else ('dark' if m.is_active else 'soft') }}">{{ t('team.invited') if m.pending_invitation else (t('common.active') if m.is_active else t('team.deactivated')) }}</span></td>
+        <td style="text-align:right">
+          {% if can('manage_team') and not me %}
+            {% if m.pending_invitation %}<button class="btn small" data-api="DELETE /api/v1/team/{{ m.id }}/invitation">{{ t('action.cancel') }}</button>
+            {% elif m.is_active %}<button class="btn small danger-outline" data-api="PATCH /api/v1/team/{{ m.id }}" data-body='{"is_active": false}' data-confirm="{{ t('team.deactivate_confirm', name=m.full_name) }}">{{ t('team.deactivate') }}</button>
+            {% else %}<button class="btn small" data-api="PATCH /api/v1/team/{{ m.id }}" data-body='{"is_active": true}'>{{ t('team.reactivate') }}</button>{% endif %}
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+{% if can('manage_team') %}
+<section class="card" aria-labelledby="invite">
+  <div><h2 id="invite">{{ t('team.invite') }}</h2><span class="muted" style="font-size:14px">{{ t('team.invite_help') }}</span></div>
+  <form class="form-grid" data-api-form="POST /api/v1/team/invitations" data-success="{{ t('team.invited_ok') }}" style="align-items:end">
+    <label class="field">{{ t('team.full_name') }}<input class="input" name="full_name" required></label>
+    <label class="field">{{ t('customers.email') }}<input class="input" type="email" name="email" required></label>
+    <label class="field">{{ t('team.role') }}<select class="input" name="role">{% for r in ['agent', 'manager', 'viewer', 'admin'] %}<option value="{{ r }}">{{ t('role.' ~ r) }}</option>{% endfor %}</select></label>
+    <div><button class="btn primary" type="submit">{{ t('team.send_invite') }}</button></div>
+  </form>
+</section>
+{% endif %}
+
+<section class="card" aria-labelledby="perms">
+  <div><h2 id="perms">{{ t('team.permissions') }}</h2><span class="muted" style="font-size:14px">{{ t('team.permissions_help') }}</span></div>
+  <div class="table-wrap"><table class="data" style="min-width:760px">
+    <thead><tr><th>{{ t('team.permission') }}</th>{% for r in ['admin', 'manager', 'agent', 'viewer'] %}<th style="text-align:center">{{ t('role.' ~ r) }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for perm, roles in permissions.items() %}
+      <tr><th scope="row" style="text-align:left;font-weight:500;color:var(--ink)">{{ t('perm.' ~ perm) }}</th>
+        {% for r in ['admin', 'manager', 'agent', 'viewer'] %}
+          <td style="text-align:center">{% if r in roles %}<span role="img" aria-label="{{ t('team.allowed') }}" style="display:inline-flex;width:28px;height:28px;border-radius:50%;background:var(--ink);color:#fff;align-items:center;justify-content:center;font-weight:700">✓</span>{% else %}<span role="img" aria-label="{{ t('team.not_allowed') }}" class="muted" style="font-size:18px">—</span>{% endif %}</td>
+        {% endfor %}</tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}

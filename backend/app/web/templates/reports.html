@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}{{ t('nav.reports') }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div><div class="eyebrow">{{ t('reports.subtitle') }}</div><h1>{{ t('nav.reports') }}</h1></div>
+</header>
+
+<section class="card" style="border:2px solid var(--ink)" aria-labelledby="step1">
+  <h2 id="step1">1 · {{ t('reports.step1') }}</h2>
+  <div class="field"><span id="lbl-site">{{ t('reports.site') }}</span>
+    <div class="kpis" role="group" aria-labelledby="lbl-site" style="grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+      {% for s in sites %}
+        <a class="site-row {{ 'on' if site_param == s.id|string else '' }}" href="/reports?site={{ s.id }}&period={{ period }}" aria-current="{{ 'true' if site_param == s.id|string else 'false' }}">
+          <span><b style="display:block">{{ s.name }}</b><span class="muted" style="font-size:13px">{{ t('reports.n_spaces', n=s.total_bays) }}</span></span></a>
+      {% endfor %}
+      {% if can('download_reports') and sites|length > 1 %}
+        <a class="site-row {{ 'on' if site_param == 'all' else '' }}" href="/reports?site=all&period={{ period }}" aria-current="{{ 'true' if site_param == 'all' else 'false' }}">
+          <span><b style="display:block">{{ t('reports.all_sites') }}</b><span class="muted" style="font-size:13px">{{ t('reports.consolidated') }}</span></span></a>
+      {% endif %}
+    </div>
+  </div>
+  <div class="field"><span>{{ t('reports.period') }}</span>
+    <div class="row">
+      <div class="segmented">
+        {% for key in ['day', 'week', 'month', 'last_month', 'year'] %}
+          <a href="/reports?site={{ site_param }}&period={{ key }}" aria-current="{{ 'true' if period == key else 'false' }}">{{ t('reports.period_' ~ key) }}</a>
+        {% endfor %}
+      </div>
+      <span class="mono" style="font-size:14px">{{ fdate(start) }} → {{ fdate(end) }}</span>
+    </div>
+  </div>
+</section>
+
+<section class="card" aria-labelledby="step2">
+  <div class="card-head"><h2 id="step2">2 · {{ t('reports.step2') }}</h2><span class="muted" style="font-size:14px">{{ t('reports.n_reports', n=report_types|length) }}</span></div>
+  {% if not site_param %}<p class="notice" role="status">{{ t('reports.pick_site_first') }}</p>{% endif %}
+  {% set site_query = '' if site_param in ('', 'all') else '&site_id=' ~ site_param %}
+  <div>
+    {% for rt in report_types %}
+      <div class="row" style="padding:16px 0;border-bottom:1px solid #EEEFEA">
+        <div style="flex:1 1 280px;min-width:0"><h3>{{ t('report.' ~ rt ~ '.title') }}</h3><span class="muted" style="font-size:14px">{{ t('report.' ~ rt ~ '.desc') }}</span></div>
+        <div class="segmented" role="group" aria-label="{{ t('reports.format') }}">
+          <button type="button" aria-pressed="true" onclick="this.parentNode.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed', b===this));this.closest('.row').querySelector('[data-api]').dataset.api=this.dataset.spec" data-spec="GET /api/v1/reports/{{ rt }}?format=pdf&period={{ period }}{{ site_query }}">PDF</button>
+          <button type="button" aria-pressed="false" onclick="this.parentNode.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed', b===this));this.closest('.row').querySelector('[data-api]').dataset.api=this.dataset.spec" data-spec="GET /api/v1/reports/{{ rt }}?format=xlsx&period={{ period }}{{ site_query }}">Excel</button>
+        </div>
+        <button class="btn primary" data-api="GET /api/v1/reports/{{ rt }}?format=pdf&period={{ period }}{{ site_query }}" {{ '' if site_param and can('download_reports') else 'disabled' }}>
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>
+          {{ t('action.download') }}</button>
+      </div>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="card" aria-labelledby="recent">
+  <h2 id="recent">{{ t('reports.recent') }}</h2>
+  {% for e in exports %}
+    <div class="row" style="padding:12px 0;border-bottom:1px solid #EEEFEA;font-size:14px">
+      <span class="plate-tag" style="font-size:12px;min-width:48px;text-align:center">{{ e.format|upper }}</span>
+      <b style="flex:1 1 260px">{{ t('report.' ~ e.report_type ~ '.title') }} · {{ e.site_name or t('reports.all_sites') }} · {{ fdate(e.period_from) }} → {{ fdate(e.period_to) }}</b>
+      <span class="muted">{{ fdt(e.created_at) }}</span><span class="muted">{{ ((e.file_size or 0) / 1024)|round|int }} KB</span>
+    </div>
+  {% else %}<p class="muted">{{ t('reports.no_exports') }}</p>{% endfor %}
+</section>
+{% endblock %}

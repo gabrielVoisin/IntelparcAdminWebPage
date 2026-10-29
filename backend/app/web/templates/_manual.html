@@ -1,0 +1,58 @@
+{# Manual management block shared by the Bookings and Subscribers pages.
+   Context: manual = {mode, name, plate}, match = matching row or None #}
+<section class="card" aria-labelledby="manual-title">
+  <div><h2 id="manual-title">{{ t('manual.title_' ~ ('subscription' if active == 'subscriptions' else 'generic')) }}</h2>
+    <span class="muted" style="font-size:14px">{{ t('manual.help') }}</span></div>
+  <form method="get" class="form-grid">
+    {% if active == 'reservations' %}
+    <div class="segmented full" role="group" aria-label="{{ t('manual.what') }}">
+      <button type="submit" name="mode" value="reservation" aria-pressed="{{ 'true' if manual.mode == 'reservation' else 'false' }}">{{ t('manual.mode_reservation') }}</button>
+      <button type="submit" name="mode" value="subscription" aria-pressed="{{ 'true' if manual.mode == 'subscription' else 'false' }}">{{ t('manual.mode_subscription') }}</button>
+    </div>
+    {% endif %}
+    <label class="field">{{ t('manual.name') }}<input class="input" name="mname" value="{{ manual.name }}" placeholder="{{ t('manual.name_example') }}" autocomplete="off"></label>
+    <label class="field">{{ t('manual.plate') }}<input class="input plate" name="mplate" value="{{ manual.plate }}" placeholder="EF-456-GH" autocomplete="off"></label>
+    <input type="hidden" name="mode" value="{{ manual.mode }}">
+    <div class="full"><button class="btn" type="submit">{{ t('action.search') }}</button></div>
+  </form>
+
+  {% if manual.name or manual.plate %}
+    {% if match %}
+      <div class="alarm-card" style="border:1px solid var(--ink)">
+        <b>{{ t('manual.found_' ~ manual.mode) }}{{ ' :' if locale == 'fr' else ':' }} {{ match.customer_name }} · {{ match.plate or '—' }}</b>
+        {% if manual.mode == 'reservation' %}
+          <span style="font-size:14px">{{ match.bay_label }} · {{ fdt(match.starts_at) }} → {{ fdt(match.ends_at) }} · {{ t('reservation_status.' ~ match.display_status) }}</span>
+          {% if can('manage_bookings_subscriptions') and match.display_status in ('ongoing', 'upcoming', 'overdue') %}
+          <form class="form-grid" data-api-form="PATCH /api/v1/reservations/{{ match.id }}">
+            <label class="field">{{ t('reservations.start') }}<input class="input" type="datetime-local" name="starts_at" data-type="datetime" value="{{ dtinput(match.starts_at) }}"></label>
+            <label class="field">{{ t('reservations.end') }}<input class="input" type="datetime-local" name="ends_at" data-type="datetime" value="{{ dtinput(match.ends_at) }}"></label>
+            <div class="row full">
+              <button class="btn dark" type="submit">{{ t('manual.edit_reservation') }}</button>
+              <button class="btn danger-outline" type="button" data-api="POST /api/v1/reservations/{{ match.id }}/cancel" data-confirm="{{ t('reservations.cancel_confirm', name=match.customer_name) }}">{{ t('manual.cancel_reservation') }}</button>
+            </div>
+          </form>
+          {% endif %}
+        {% else %}
+          <span style="font-size:14px">{{ match.plan_name[locale] }} · {{ match.bay_label or '—' }} · {{ t('subscriptions.due') }} {{ fdate(match.ends_on) }} · {{ t('subscription_status.' ~ match.display_status) }}</span>
+          {% if can('manage_bookings_subscriptions') %}
+          <form class="form-grid" data-api-form="PATCH /api/v1/subscriptions/{{ match.id }}">
+            {% if plans %}<label class="field">{{ t('subscriptions.plan') }}<select class="input" name="plan_id">{% for p in plans %}<option value="{{ p.id }}" {% if p.code == match.plan_code %}selected{% endif %}>{{ p.name[locale] }} · {{ money(p.price_cents) }}</option>{% endfor %}</select></label>{% endif %}
+            <label class="field">{{ t('subscriptions.auto_renew') }}<select class="input" name="auto_renew" data-type="bool"><option value="true" {% if match.auto_renew %}selected{% endif %}>{{ t('common.yes') }}</option><option value="false" {% if not match.auto_renew %}selected{% endif %}>{{ t('common.no') }}</option></select></label>
+            <div class="row full">
+              <button class="btn dark" type="submit">{{ t('manual.edit_subscription') }}</button>
+              {% if match.status == 'suspended' %}
+              <button class="btn" type="button" data-api="POST /api/v1/subscriptions/{{ match.id }}/reactivate">{{ t('subscriptions.reactivate') }}</button>
+              {% else %}
+              <button class="btn" type="button" data-api="POST /api/v1/subscriptions/{{ match.id }}/suspend">{{ t('subscriptions.suspend') }}</button>
+              {% endif %}
+              <button class="btn danger-outline" type="button" data-api="POST /api/v1/subscriptions/{{ match.id }}/terminate" data-confirm="{{ t('subscriptions.terminate_confirm', name=match.customer_name) }}">{{ t('manual.terminate_subscription') }}</button>
+            </div>
+          </form>
+          {% endif %}
+        {% endif %}
+      </div>
+    {% else %}
+      <div class="alarm-card" style="background:#fff;border:1px dashed #8A8E96"><b>{{ t('manual.none_' ~ manual.mode) }}</b><span style="font-size:14px">{{ t('manual.check_spelling') }}</span></div>
+    {% endif %}
+  {% endif %}
+</section>

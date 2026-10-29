@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}{{ t('nav.subscriptions') }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div><div class="eyebrow">{{ today }}</div><h1>{{ t('nav.subscriptions') }}</h1></div>
+  <div class="row">
+    {% if can('download_reports') %}<a class="btn" href="/reports">{{ t('action.export') }}</a>{% endif %}
+  </div>
+</header>
+
+<section class="kpis" aria-label="{{ t('subscriptions.summary') }}">
+  <div class="kpi"><span class="label">{{ t('subscriptions.active') }}</span><span class="value">{{ stats.active }}</span></div>
+  <div class="kpi"><span class="label">{{ t('subscriptions.expiring_7') }}</span><span class="value">{{ stats.expiring_soon }}</span></div>
+  <div class="kpi alert"><span class="label">{{ t('subscriptions.late_payments') }}</span><span class="value">{{ stats.unpaid }}</span></div>
+  <div class="kpi"><span class="label">{{ t('subscriptions.monthly_revenue') }}</span><span class="value">{{ money(stats.monthly_revenue_cents) }}</span></div>
+</section>
+
+<section class="card" aria-labelledby="list-title">
+  <div class="card-head">
+    <h2 id="list-title">{{ t('subscriptions.list') }}</h2>
+    <form class="search" role="search"><input type="hidden" name="tab" value="{{ tab }}">
+      <label class="sr-only" for="q">{{ t('common.search_name_plate') }}</label>
+      <input id="q" type="search" name="q" value="{{ q }}" placeholder="{{ t('common.search_name_plate') }}…"></form>
+  </div>
+  <div class="segmented" role="group" aria-label="{{ t('subscriptions.status') }}">
+    {% for key, n in [('active', stats.counts.active + stats.counts.expiring_soon), ('expiring_soon', stats.counts.expiring_soon), ('unpaid', stats.counts.unpaid), ('suspended', stats.counts.suspended), ('ended', stats.counts.ended), ('all', None)] %}
+      <a href="/subscriptions?tab={{ key }}&q={{ q|urlencode }}" aria-current="{{ 'true' if tab == key else 'false' }}" {% if key == 'unpaid' %}style="color:{{ '#fff' if tab == key else 'var(--red-dark)' }};{{ 'background:var(--red-dark)' if tab == key else '' }}"{% endif %}>{{ t('subscriptions.tab_' ~ key) }}{% if n is not none %} ({{ n }}){% endif %}</a>
+    {% endfor %}
+  </div>
+  <div class="table-wrap">
+    <table class="data" style="min-width:1000px">
+      <thead><tr><th>{{ t('col.name') }}</th><th>{{ t('col.plate') }}</th><th>{{ t('col.bay') }}</th><th>{{ t('col.start') }}</th><th>{{ t('col.due') }}</th><th>{{ t('col.period') }}</th><th>{{ t('col.status') }}</th><th><span class="sr-only">{{ t('col.actions') }}</span></th></tr></thead>
+      <tbody>
+      {% for s in rows %}
+        {% set left = s.days_left %}
+        {% set pct = 100 if left < 0 else ((30 - [left, 30]|min) * 100 / 30)|round %}
+        <tr>
+          <td><div class="person"><span class="avatar" aria-hidden="true">{{ s.customer_name.split(' ')|map('first')|join('') }}</span>
+            <span><b>{{ s.customer_name }}</b><span class="sub-line">{{ s.plan_name[locale] }} · {{ money(s.price_cents) }}/{{ t('common.month') }}</span></span></div></td>
+          <td><span class="plate-tag">{{ s.plate or '—' }}</span></td>
+          <td class="mono">{{ s.bay_label or '—' }}</td>
+          <td>{{ fdate(s.starts_on) }}</td>
+          <td><b>{{ fdate(s.ends_on) }}</b><span class="sub-line">{{ t('subscriptions.auto') if s.auto_renew else t('subscriptions.manual') }}</span></td>
+          <td style="min-width:150px">
+            <span style="font-size:13px;font-weight:600" class="{{ 'red' if s.display_status == 'unpaid' else ('muted' if s.display_status in ('ended', 'suspended') else '') }}">
+              {% if s.display_status == 'suspended' %}{{ t('subscriptions.suspended_text') }}
+              {% elif s.display_status == 'ended' %}{{ t('subscriptions.ended_text', n=-left) }}
+              {% elif s.display_status == 'unpaid' %}{{ t('subscriptions.overdue_by', n=-left) if left < 0 else t('subscriptions.unpaid_text', n=left) }}
+              {% else %}{{ t('subscriptions.days_left', n=left) }}{% endif %}</span>
+            <div class="bar {{ 'red' if s.display_status == 'unpaid' else '' }}" aria-hidden="true" style="height:6px;margin-top:6px"><span style="width:{{ pct }}%"></span></div>
+          </td>
+          <td><span class="badge {{ {'active': 'dark', 'expiring_soon': 'dashed', 'unpaid': 'red', 'suspended': 'outline', 'ended': 'soft'}[s.display_status] }}">{{ t('subscription_status.' ~ s.display_status) }}</span></td>
+          <td><div class="actions">
+            {% if can('manage_bookings_subscriptions') %}
+              {% if s.status != 'terminated' %}<button class="btn small" data-api="POST /api/v1/subscriptions/{{ s.id }}/renew" data-body='{"months": 1}'>+1 {{ t('common.month') }}</button>{% endif %}
+              {% if s.status == 'suspended' or s.status == 'terminated' %}
+                <button class="btn small" data-api="POST /api/v1/subscriptions/{{ s.id }}/reactivate">{{ t('subscriptions.reactivate') }}</button>
+              {% else %}
+                <button class="btn small" data-api="POST /api/v1/subscriptions/{{ s.id }}/suspend">{{ t('subscriptions.suspend') }}</button>
+              {% endif %}
+            {% endif %}
+          </div></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8" class="empty">{{ t('subscriptions.empty') }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="muted" style="font-size:14px">{{ t('subscriptions.n_shown', n=rows|length) }}</div>
+</section>
+
+{% include "_manual.html" %}
+{% endblock %}

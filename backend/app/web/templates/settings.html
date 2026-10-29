@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}{{ t('nav.settings') }}{% endblock %}
+{% block content %}
+{% macro field(key, type='text', suffix=None, help=None, options=None, full=False) %}
+  <label class="field {{ 'full' if full else '' }}">{{ t('setting.' ~ key) }}
+    {% if options %}
+      <select class="input" name="{{ key }}" {{ '' if can('change_settings') else 'disabled' }}>
+        {% for value in options %}<option value="{{ value }}" {% if values[key]|string == value|string %}selected{% endif %}>{{ t('option.' ~ value) }}</option>{% endfor %}
+      </select>
+    {% elif suffix %}
+      <span class="input-group"><input class="input" type="{{ type }}" name="{{ key }}" value="{{ values[key] }}" {% if type == 'number' %}data-type="int"{% endif %} {{ '' if can('change_settings') else 'readonly' }}><span class="suffix">{{ suffix }}</span></span>
+    {% else %}
+      <input class="input" type="{{ type }}" name="{{ key }}" value="{{ values[key] }}" {{ '' if can('change_settings') else 'readonly' }}>
+    {% endif %}
+    {% if help %}<span class="help">{{ t(help) }}</span>{% endif %}
+  </label>
+{% endmacro %}
+{% macro toggle(key) %}
+  <div class="toggle-row">
+    <div><b style="display:block">{{ t('setting.' ~ key) }}</b><span class="muted" style="font-size:13px">{{ t('setting.' ~ key ~ '.help') }}</span></div>
+    <input type="hidden" id="{{ key }}" name="{{ key }}" value="{{ 'true' if values[key] else 'false' }}" data-type="bool">
+    <button type="button" class="switch" role="switch" data-name="{{ key }}" aria-checked="{{ 'true' if values[key] else 'false' }}" aria-label="{{ t('setting.' ~ key) }}" {{ '' if can('change_settings') else 'disabled' }}></button>
+  </div>
+{% endmacro %}
+
+<header class="page-head">
+  <div><div class="eyebrow">{{ t('settings.subtitle') }}</div><h1>{{ t('nav.settings') }}</h1></div>
+  <span class="muted" style="font-weight:600" data-dirty-target>{{ t('settings.all_saved') }}</span>
+</header>
+
+<div class="split">
+  <nav class="card" style="flex:1 1 220px;padding:8px;gap:2px" aria-label="{{ t('settings.sections') }}">
+    {% for key in ['general', 'parkings', 'control', 'payments', 'notifications', 'security'] %}
+      <a href="/settings?section={{ key }}" class="site-row {{ 'on' if section == key else '' }}" style="border:0;min-height:56px;{{ 'background:var(--ink);color:#fff' if section == key else '' }}" aria-current="{{ 'page' if section == key else 'false' }}">
+        <span><b style="display:block">{{ t('settings.' ~ key) }}</b><span style="font-size:12px;{{ 'color:#D4D6DB' if section == key else 'color:var(--muted)' }}">{{ t('settings.' ~ key ~ '_sub') }}</span></span></a>
+    {% endfor %}
+  </nav>
+
+  <div class="wide" style="display:flex;flex-direction:column;gap:24px">
+  {% if section == 'parkings' %}
+    <section class="card">
+      <div><h2>{{ t('settings.parkings') }}</h2><span class="muted" style="font-size:14px">{{ t('settings.parkings_help') }}</span></div>
+      <div class="table-wrap"><table class="data">
+        <thead><tr><th>{{ t('col.site') }}</th><th>{{ t('col.bays') }}</th><th>{{ t('col.free') }}</th><th>{{ t('col.status') }}</th><th></th></tr></thead>
+        <tbody>
+        {% for s in sites %}
+          <tr><td><b>{{ s.name }}</b><span class="sub-line">{{ s.address_line or '' }} {{ s.city or '' }}</span></td>
+            <td class="mono">{{ s.total_bays }}</td><td class="mono">{{ s.free_bays }}</td>
+            <td><span class="badge {{ 'dark' if s.is_active else 'soft' }}">{{ t('common.active') if s.is_active else t('common.disabled') }}</span></td>
+            <td style="text-align:right">{% if can('change_settings') %}<button class="btn small" data-api="PATCH /api/v1/sites/{{ s.id }}" data-body='{"is_active": {{ 'false' if s.is_active else 'true' }}}'>{{ t('action.disable') if s.is_active else t('action.enable') }}</button>{% endif %}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+    </section>
+  {% elif section == 'notifications' %}
+    <section class="card">
+      <div><h2>{{ t('settings.notifications') }}</h2><span class="muted" style="font-size:14px">{{ t('settings.notifications_help') }}</span></div>
+      <div class="table-wrap"><table class="data">
+        <thead><tr><th>{{ t('col.event') }}</th>{% for ch in ['email', 'sms', 'app'] %}<th style="text-align:center">{{ t('channel_notif.' ~ ch) }}</th>{% endfor %}</tr></thead>
+        <tbody>
+        {% for ev in ['payment_alarm', 'booking_overdue', 'site_full', 'device_fault', 'subscription_unpaid', 'weekly_report'] %}
+          <tr><th scope="row" style="text-align:left;font-weight:500;color:var(--ink)">{{ t('event.' ~ ev) }}</th>
+          {% for ch in ['email', 'sms', 'app'] %}
+            {% set on = rules.get((ev, ch), false) %}
+            <td style="text-align:center"><button type="button" class="switch" role="switch" aria-checked="{{ 'true' if on else 'false' }}" aria-label="{{ t('event.' ~ ev) }} · {{ t('channel_notif.' ~ ch) }}"
+              {% if can('change_settings') %}data-api="PUT /api/v1/notification-rules" data-body='[{"event": "{{ ev }}", "channel": "{{ ch }}", "enabled": {{ 'false' if on else 'true' }}}]'{% else %}disabled{% endif %}></button></td>
+          {% endfor %}</tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+    </section>
+  {% else %}
+    <form data-api-form="PUT /api/v1/settings" data-wrap="values" data-flat data-dirty-label="{{ t('settings.unsaved') }}" data-success="{{ t('settings.saved') }}" style="display:flex;flex-direction:column;gap:24px">
+    {% if section == 'general' %}
+      <section class="card"><div><h2>{{ t('settings.identity') }}</h2><span class="muted" style="font-size:14px">{{ t('settings.identity_help') }}</span></div>
+        <div class="form-grid">{{ field('general.site_name') }}</div></section>
+      <section class="card"><div><h2>{{ t('settings.hours') }}</h2><span class="muted" style="font-size:14px">{{ t('settings.hours_help') }}</span></div>
+        <div class="form-grid">
+          {{ field('general.opens_at', 'time') }}{{ field('general.closes_at', 'time') }}
+          {{ field('general.currency', options=['EUR', 'CHF']) }}{{ field('general.timezone', options=['Europe/Paris', 'Europe/Zurich', 'Europe/Berlin']) }}
+        </div>
+        {{ toggle('general.open_24h') }}</section>
+    {% elif section == 'control' %}
+      <section class="card"><div><h2>{{ t('settings.grace') }}</h2><span class="muted" style="font-size:14px">{{ t('settings.grace_help') }}</span></div>
+        <div class="form-grid">
+          {{ field('control.grace_alarm_min', 'number', 'min', 'setting.control.grace_alarm_min.help') }}
+          {{ field('control.grace_exit_min', 'number', 'min') }}
+          {{ field('control.overstay_min', 'number', 'min') }}
+          {{ field('control.fine_cents', 'number', 'cts') }}
+          {{ field('control.occupancy_alert_pct', 'number', '%') }}
+        </div>
+        {{ toggle('control.anpr_enabled') }}{{ toggle('control.auto_open_subscribers') }}{{ toggle('control.accessible_bay_check') }}{{ toggle('control.auto_fine') }}</section>
+    {% elif section == 'payments' %}
+      <section class="card"><div><h2>{{ t('settings.billing') }}</h2><span class="muted" style="font-size:14px">{{ t('settings.billing_help') }}</span></div>
+        <div class="form-grid">
+          {{ field('payments.billing_mode', options=['started_hour', 'quarter_hour', 'minute']) }}
+          {{ field('payments.free_minutes', 'number', 'min') }}
+          {{ field('payments.vat_bp', 'number', 'bp', 'setting.payments.vat_bp.help') }}
+          {{ field('payments.lost_ticket_cents', 'number', 'cts') }}
+        </div></section>
+    {% elif section == 'security' %}
+      <section class="card"><div><h2>{{ t('settings.signin') }}</h2></div>
+        <div class="form-grid">{{ field('security.session_minutes', 'number', 'min') }}</div>
+        {{ toggle('security.require_2fa') }}</section>
+      <section class="card"><div><h2>{{ t('settings.gdpr') }}</h2><span class="muted" style="font-size:14px">{{ t('settings.gdpr_help') }}</span></div>
+        <div class="form-grid">{{ field('gdpr.plate_retention_days', 'number', t('common.days')) }}{{ field('gdpr.video_retention_days', 'number', t('common.days')) }}</div>
+        {{ toggle('gdpr.anonymise_exports') }}</section>
+    {% endif %}
+    {% if can('change_settings') %}<div><button class="btn primary" type="submit">{{ t('action.save') }}</button></div>{% endif %}
+    </form>
+  {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}{{ t('nav.pricing') }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div><div class="eyebrow">{{ t('pricing.subtitle') }}</div><h1>{{ t('nav.pricing') }}</h1></div>
+</header>
+
+{% set h = current.hourly.amount_cents if current.hourly else 0 %}
+{% set d = current.daily.amount_cents if current.daily else 0 %}
+{% set m = current.monthly.amount_cents if current.monthly else 0 %}
+<section class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:24px" aria-label="{{ t('pricing.prices') }}">
+  {% for kind, step, example, example2 in [
+      ('hourly', 0.1, t('pricing.ex_hourly', price=money(h * 3, decimals=true)), t('pricing.ex_hourly2', n=((d / h)|round(0, 'ceil')|int) if h else '—')),
+      ('daily', 1, t('pricing.ex_daily', price=money(d, decimals=true), price5=money(d * 5, decimals=true)), t('pricing.ex_daily2', n=num(d / h) if h else '—')),
+      ('monthly', 5, t('pricing.ex_monthly', price=money((m / 22)|round|int, decimals=true)), t('pricing.ex_monthly2', n=((m / d)|round(0, 'ceil')|int) if d else '—'))] %}
+  {% set tariff = current[kind] %}
+  <form class="card" data-api-form="PUT /api/v1/tariffs/{{ kind }}" data-success="{{ t('pricing.saved') }}">
+    <div class="row" style="justify-content:space-between;align-items:flex-start">
+      <div><h2>{{ t('pricing.' ~ kind) }}</h2><span class="muted" style="font-size:14px">{{ t('pricing.' ~ kind ~ '_desc') }}</span></div>
+      <span class="badge dark">{{ t('pricing.current') }}</span>
+    </div>
+    <div style="display:flex;align-items:baseline;gap:6px"><span style="font-size:48px;font-weight:700;line-height:1;letter-spacing:-.02em">{{ money(tariff.amount_cents if tariff else 0) }}</span><span style="font-size:18px;font-weight:600" class="muted">/ {{ t('pricing.unit_' ~ kind) }}</span></div>
+    <label class="field">{{ t('pricing.new_price') }}
+      <span class="input-group"><input class="input" type="number" min="0" step="{{ step }}" name="amount_cents" data-type="cents" value="{{ '%.2f'|format((tariff.amount_cents if tariff else 0) / 100) }}" {{ '' if can('change_prices') else 'readonly' }}><span class="suffix">€</span></span>
+      <span class="help">{{ t('pricing.since', date=fdate(tariff.valid_from)) if tariff else '' }}</span></label>
+    <div class="alarm-card"><span class="muted" style="font-size:12px;font-weight:600;letter-spacing:.06em">{{ t('pricing.example')|upper }}</span><b style="font-size:15px">{{ example }}</b><span style="font-size:13px">{{ example2 }}</span></div>
+    {% if can('change_prices') %}<button class="btn primary" type="submit">{{ t('action.save') }}</button>{% endif %}
+  </form>
+  {% endfor %}
+</section>
+
+<section class="card" aria-labelledby="history-title">
+  <h2 id="history-title">{{ t('pricing.history') }}</h2>
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>{{ t('pricing.valid_from') }}</th><th>{{ t('pricing.valid_to') }}</th><th>{{ t('pricing.price') }}</th><th>{{ t('col.amount') }}</th><th>{{ t('pricing.by') }}</th></tr></thead>
+    <tbody>
+    {% for row in history %}
+      <tr><td class="mono">{{ fdt(row.valid_from) }}</td><td class="mono">{{ fdt(row.valid_to) if row.valid_to else t('pricing.current') }}</td>
+        <td><b>{{ t('pricing.' ~ row.kind) }}</b></td><td>{{ money(row.amount_cents, decimals=true) }} / {{ t('pricing.unit_' ~ row.kind) }}</td><td class="muted">{{ row.created_by_name or '—' }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}

@@ -1,0 +1,6 @@
+# Prototype on one Raspberry Pi: plain HTTP on the local network, for the website and the Android app
+# (http://<IP of the Pi>). Use the main Caddyfile (HTTPS with a domain name) as soon as the server is public.
+:80 {
+	encode gzip
+	reverse_proxy api:8000
+}

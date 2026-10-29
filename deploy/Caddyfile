@@ -1,0 +1,11 @@
+# Automatic HTTPS (Let's Encrypt) for the website, the Android app and the Raspberry Pi agents.
+{$DOMAIN} {
+	encode gzip
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		X-Frame-Options DENY
+		Referrer-Policy same-origin
+	}
+	reverse_proxy api:8000
+}

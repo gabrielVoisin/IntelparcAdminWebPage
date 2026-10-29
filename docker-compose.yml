@@ -1,0 +1,53 @@
+# Local or single-server deployment:  cp .env.example .env  &&  docker compose up -d --build
+# Demo data (once):                   docker compose exec api python -m app.cli seed-demo
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: parking
+      POSTGRES_USER: parking
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set it in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U parking -d parking"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db: {condition: service_healthy}
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      DATABASE_URL: postgresql+psycopg://parking:${POSTGRES_PASSWORD}@db:5432/parking
+      JWT_SECRET: ${JWT_SECRET:?set it in .env}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+      DEFAULT_LOCALE: ${DEFAULT_LOCALE:-fr}
+      # Driver app and Bluetooth identification
+      BLE_SIGNING_KEY: ${BLE_SIGNING_KEY:-}          # empty = derived from JWT_SECRET
+      SMS_DEBUG: ${SMS_DEBUG:-false}                 # true only for a prototype without SMS gateway
+      EVIDENCE_DIR: /srv/evidence
+    volumes:
+      - evidence:/srv/evidence                       # plate photos taken by agents before a fine
+    ports:
+      - "127.0.0.1:8000:8000"   # reached through Caddy; open only locally (the cabinet agent uses it on a single Pi)
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [api]
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+
+volumes:
+  pgdata:
+  caddy_data:
+  evidence:

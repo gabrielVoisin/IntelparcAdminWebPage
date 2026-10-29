@@ -1,0 +1,12 @@
+# Override for the single-Raspberry-Pi prototype:
+#   docker compose -f docker-compose.yml -f deploy/raspberry-pi/docker-compose.pi.yml up -d --build
+services:
+  api:
+    environment:
+      COOKIE_SECURE: "false"     # plain HTTP on the local network
+      SMS_DEBUG: "true"          # no SMS gateway: the code is shown in the app during sign-up
+  caddy:
+    environment:
+      DOMAIN: ":80"
+    volumes:
+      - ./deploy/raspberry-pi/Caddyfile.lan:/etc/caddy/Caddyfile:ro

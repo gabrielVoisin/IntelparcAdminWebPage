@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}{{ t('nav.customers') }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div><div class="eyebrow">{{ t('customers.registered', n=total) }}</div><h1>{{ t('nav.customers') }}</h1></div>
+</header>
+
+<section class="card" aria-label="{{ t('customers.search_label') }}">
+  <form role="search" style="display:flex;flex-direction:column;gap:12px">
+    <label for="q" style="font-weight:600">{{ t('customers.search_label') }}</label>
+    <div class="search" style="min-height:56px;border:2px solid var(--ink);border-radius:10px">
+      <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#16181D" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <input id="q" type="search" name="q" value="{{ q }}" placeholder="{{ t('customers.search_placeholder') }}" style="flex:1;font-size:17px" autofocus>
+    </div>
+  </form>
+  {% if q %}
+    <div style="border:1px solid var(--line);border-radius:10px;overflow:hidden">
+      {% for r in results %}
+        <a href="/customers?q={{ q|urlencode }}&id={{ r.id }}" class="site-row" style="border:0;border-bottom:1px solid #EEEFEA;border-radius:0;{% if profile and profile.id == r.id %}background:var(--soft){% endif %}">
+          <span class="person"><span class="avatar" aria-hidden="true">{{ r.first_name[:1] }}{{ r.last_name[:1] }}</span><b>{{ r.first_name }} {{ r.last_name }}</b><span class="muted" style="font-size:13px">{{ r.reference }}</span></span>
+          <span class="plate-tag">{{ r.plate or '—' }}</span>
+        </a>
+      {% else %}
+        <p class="empty" style="margin:0">{{ t('customers.not_found', q=q) }}</p>
+      {% endfor %}
+    </div>
+  {% endif %}
+</section>
+
+{% if profile %}
+{% set p = profile %}
+<section class="card" style="flex-direction:row;flex-wrap:wrap;align-items:center;justify-content:space-between">
+  <div class="person" style="gap:16px">
+    <span class="avatar" aria-hidden="true" style="width:64px;height:64px;font-size:22px;background:var(--ink);color:#fff">{{ p.first_name[:1] }}{{ p.last_name[:1] }}</span>
+    <div><h2 style="font-size:26px;font-weight:700">{{ p.first_name }} {{ p.last_name }}</h2>
+      <span class="muted" style="font-size:14px">{{ t('customers.ref', ref=p.reference, since=fdate(p.created_at)) }}</span></div>
+  </div>
+  <div class="row">{% for v in p.vehicles %}<span class="plate-tag" style="font-size:18px;padding:4px 12px;border-width:2px">{{ v.plate_display }}</span>{% endfor %}</div>
+</section>
+
+<div class="kpis" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr))">
+  {% set loc = p.location %}
+  <div class="kpi" style="{{ '' if loc.outside else 'border:2px solid var(--ink)' }}">
+    <span class="label" style="font-weight:600">{{ t('customers.location') }}</span>
+    {% if loc.outside %}
+      <b style="font-size:18px">{{ t('customers.outside') }}</b><span class="note">{{ t('customers.last_exit', when=fdt(loc.last_exit_at)) if loc.last_exit_at else '' }}</span>
+    {% else %}
+      <b style="font-size:18px">{{ loc.zone_name }} · {{ t('plan.bay') }} {{ loc.bay_number }}</b>
+      <span class="note">{{ loc.site_name }} · {{ t('customers.entered_at', time=ftime(loc.entered_at)) }}</span>
+      <a href="/plan" style="font-size:14px;font-weight:600">{{ t('customers.view_on_map') }}</a>
+    {% endif %}
+  </div>
+  <div class="kpi"><span class="label" style="font-weight:600">{{ t('customers.subscription') }}</span>
+    {% if p.subscription %}<b style="font-size:18px">{{ p.subscription.plan_name[locale] }}</b><span class="note">{{ p.subscription.bay_label or '' }} · {{ t('subscriptions.due') }} {{ fdate(p.subscription.ends_on) }}</span>
+    {% else %}<b style="font-size:18px">{{ t('common.none') }}</b><span class="note">{{ t('customers.occasional') }}</span>{% endif %}
+    <a href="/subscriptions?mname={{ (p.first_name ~ ' ' ~ p.last_name)|urlencode }}" style="font-size:14px;font-weight:600">{{ t('customers.view_subscription') if p.subscription else t('customers.offer_subscription') }}</a>
+  </div>
+  <div class="kpi"><span class="label" style="font-weight:600">{{ t('customers.reservation') }}</span>
+    {% if p.reservation %}<b style="font-size:18px">{{ t('reservation_status.' ~ p.reservation.display_status) }}</b><span class="note">{{ p.reservation.bay_label }} · {{ ftime(p.reservation.starts_at) }} → {{ ftime(p.reservation.ends_at) }}</span>
+    {% else %}<b style="font-size:18px">{{ t('common.none') }}</b><span class="note">{{ t('customers.no_reservation') }}</span>{% endif %}
+    <a href="/reservations?tab=all&q={{ p.last_name|urlencode }}" style="font-size:14px;font-weight:600">{{ t('customers.view_reservations') }}</a>
+  </div>
+  {% set bad = p.payment_state != 'up_to_date' %}
+  <div class="kpi {{ 'alert' if bad else '' }}" style="{{ 'background:var(--red-soft)' if bad else '' }}"><span class="label" style="font-weight:600">{{ t('customers.payments') }}</span>
+    <b style="font-size:18px" class="{{ 'red' if bad else '' }}">{{ t('payment_state.' ~ p.payment_state) }}</b></div>
+</div>
+
+<div class="split">
+  <section class="card wide" aria-labelledby="details-title">
+    <div class="card-head"><h3 id="details-title" style="font-size:20px">{{ t('customers.personal_details') }}</h3></div>
+    <form class="form-grid" data-api-form="PATCH /api/v1/customers/{{ p.id }}" data-success="{{ t('customers.saved') }}">
+      {% set editable = can('edit_customers') %}
+      {% for name, label, type in [('first_name', 'customers.first_name', 'text'), ('last_name', 'customers.last_name', 'text'), ('phone', 'customers.phone', 'tel'), ('email', 'customers.email', 'email'), ('address_line', 'customers.address', 'text'), ('postcode', 'customers.postcode', 'text'), ('city', 'customers.city', 'text')] %}
+        <label class="field {{ 'full' if name == 'address_line' else '' }}">{{ t(label) }}
+          <input class="input" type="{{ type }}" name="{{ name }}" value="{{ p[name] or '' }}" {{ '' if editable else 'readonly' }}></label>
+      {% endfor %}
+      <label class="field">{{ t('customers.language') }}
+        <select class="input" name="locale" {{ '' if editable else 'disabled' }}>{% for code in locales %}<option value="{{ code }}" {% if p.locale == code %}selected{% endif %}>{{ t('language.' ~ code) }}</option>{% endfor %}</select></label>
+      {% if editable %}<div class="full"><button class="btn primary" type="submit">{{ t('action.save') }}</button></div>{% endif %}
+    </form>
+    <div>
+      <h3 style="margin-bottom:8px">{{ t('customers.vehicles') }}</h3>
+      {% for v in p.vehicles %}
+        <div class="row" style="padding:8px 0;border-bottom:1px solid #EEEFEA"><span class="plate-tag">{{ v.plate_display }}</span><span>{{ v.make or '' }} {{ v.model or '' }}{% if v.color %} · {{ v.color }}{% endif %}</span></div>
+      {% endfor %}
+      {% if can('edit_customers') %}
+      <form class="row" style="margin-top:12px" data-api-form="POST /api/v1/customers/{{ p.id }}/vehicles">
+        <input class="input plate" name="plate_display" placeholder="{{ t('customers.new_plate') }}" required style="max-width:180px">
+        <input class="input" name="make" placeholder="{{ t('customers.make') }}" data-skip-empty style="max-width:160px">
+        <input class="input" name="model" placeholder="{{ t('customers.model') }}" data-skip-empty style="max-width:160px">
+        <button class="btn" type="submit">+ {{ t('customers.add_vehicle') }}</button>
+      </form>
+      {% endif %}
+    </div>
+  </section>
+  <section class="card narrow" aria-labelledby="activity-title">
+    <h3 id="activity-title" style="font-size:20px">{{ t('customers.activity') }}</h3>
+    {% for a in p.activity %}
+      <div class="row" style="padding:10px 0;border-bottom:1px solid #EEEFEA;font-size:14px;flex-wrap:nowrap;align-items:flex-start">
+        <span class="mono muted" style="min-width:110px">{{ fdt(a.at) }}</span>
+        <span class="{{ 'red' if a.kind.startswith('alarm') else '' }}">{{ t('activity.' ~ a.kind) }}{% if a.kind == 'payment' %} · {{ money((a.label|float * 100)|round|int, decimals=true) }}{% elif a.label %} · {{ a.label }}{% endif %}</span>
+      </div>
+    {% else %}<p class="muted">{{ t('customers.no_activity') }}</p>{% endfor %}
+  </section>
+</div>
+{% endif %}
+{% endblock %}

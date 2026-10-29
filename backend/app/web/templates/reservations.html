@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}{{ t('nav.reservations') }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div><div class="eyebrow">{{ today }} · {{ ftime(now) }}</div><h1>{{ t('nav.reservations') }}</h1></div>
+  <div class="row">
+    {% if can('download_reports') %}<a class="btn" href="/reports">{{ t('action.export') }}</a>{% endif %}
+    {% if can('manage_bookings_subscriptions') %}<a class="btn primary" href="/reservations?new=1">+ {{ t('reservations.new') }}</a>{% endif %}
+  </div>
+</header>
+
+{% if new and can('manage_bookings_subscriptions') %}
+<section class="card" aria-labelledby="new-title">
+  <h2 id="new-title">{{ t('reservations.new') }}</h2>
+  <form class="form-grid" data-api-form="POST /api/v1/reservations">
+    <label class="field">{{ t('reservations.customer') }}
+      <select class="input" name="customer_id" required>
+        {% for c in customers %}<option value="{{ c.id }}">{{ c.last_name }} {{ c.first_name }}{% if c.plate %} · {{ c.plate }}{% endif %}</option>{% endfor %}
+      </select></label>
+    <label class="field">{{ t('reservations.bay') }}
+      <select class="input" name="bay_id" required>
+        {% for b in free_bays %}<option value="{{ b.id }}">{{ b.site_code }} · {{ t('zone.' ~ b.zone_code) }} · {{ b.number }}{% if b.kind != 'standard' %} ({{ t('bay_kind.' ~ b.kind) }}){% endif %}</option>{% endfor %}
+      </select></label>
+    <label class="field">{{ t('reservations.start') }}<input class="input" type="datetime-local" name="starts_at" data-type="datetime" required></label>
+    <label class="field">{{ t('reservations.end') }}<input class="input" type="datetime-local" name="ends_at" data-type="datetime" required></label>
+    <label class="field">{{ t('reservations.channel') }}
+      <select class="input" name="channel">{% for c in ['desk', 'phone', 'web', 'app'] %}<option value="{{ c }}">{{ t('channel.' ~ c) }}</option>{% endfor %}</select></label>
+    <div class="row full"><button class="btn dark" type="submit">{{ t('action.create') }}</button><a class="btn" href="/reservations">{{ t('action.cancel') }}</a></div>
+  </form>
+</section>
+{% endif %}
+
+<section class="kpis" aria-label="{{ t('reservations.summary') }}">
+  <div class="kpi"><span class="label">{{ t('reservations.ongoing') }}</span><span class="value">{{ stats.ongoing }}</span></div>
+  <div class="kpi"><span class="label">{{ t('reservations.upcoming_today') }}</span><span class="value">{{ stats.upcoming_today }}</span></div>
+  <div class="kpi alert"><span class="label">{{ t('reservations.overdue') }}</span><span class="value">{{ stats.overdue }}</span></div>
+  <div class="kpi"><span class="label">{{ t('reservations.ending_soon') }}</span><span class="value">{{ stats.ending_soon }}</span></div>
+</section>
+
+<section class="card" aria-labelledby="list-title">
+  <div class="card-head">
+    <h2 id="list-title">{{ t('reservations.list') }}</h2>
+    <form class="search" role="search"><input type="hidden" name="tab" value="{{ tab }}">
+      <label class="sr-only" for="q">{{ t('common.search_name_plate') }}</label>
+      <input id="q" type="search" name="q" value="{{ q }}" placeholder="{{ t('common.search_name_plate') }}…"></form>
+  </div>
+  <div class="segmented" role="group" aria-label="{{ t('reservations.status') }}">
+    {% for key in ['ongoing', 'upcoming', 'completed', 'all'] %}
+      <a href="/reservations?tab={{ key }}&q={{ q|urlencode }}" aria-current="{{ 'true' if tab == key else 'false' }}">{{ t('reservations.tab_' ~ key) }}{% if key == 'ongoing' %} ({{ stats.ongoing + stats.overdue }}){% endif %}</a>
+    {% endfor %}
+  </div>
+  <div class="table-wrap">
+    <table class="data" style="min-width:980px">
+      <thead><tr><th>{{ t('col.name') }}</th><th>{{ t('col.plate') }}</th><th>{{ t('col.bay') }}</th><th>{{ t('col.start') }}</th><th>{{ t('col.end') }}</th><th>{{ t('col.progress') }}</th><th>{{ t('col.status') }}</th><th><span class="sr-only">{{ t('col.actions') }}</span></th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+        {% set total = (r.ends_at - r.starts_at).total_seconds() %}
+        {% set done = (now - r.starts_at).total_seconds() %}
+        {% set pct = 0 if r.display_status == 'upcoming' else (100 if r.display_status in ('completed', 'overdue', 'cancelled') else (100 * done / total)|round) %}
+        <tr>
+          <td><div class="person"><span class="avatar" aria-hidden="true">{{ r.customer_name.split(' ')|map('first')|join('') }}</span>
+            <span><b>{{ r.customer_name }}</b><span class="sub-line">{{ t('reservations.kind_subscriber') if r.is_subscriber else (t('reservations.kind_business') if r.company_name else t('channel.' ~ r.channel)) }}</span></span></div></td>
+          <td><span class="plate-tag">{{ r.plate or '—' }}</span></td>
+          <td class="mono">{{ r.bay_label }}{% if r.bay_kind != 'standard' %} {{ t('bay_tag.' ~ r.bay_kind) }}{% endif %}</td>
+          <td><b>{{ ftime(r.starts_at) }}</b><span class="sub-line">{{ fdate(r.starts_at) }}</span></td>
+          <td><b>{{ ftime(r.ends_at) }}</b><span class="sub-line">{{ fdate(r.ends_at) }}</span></td>
+          <td style="min-width:150px">
+            <span style="font-size:13px;font-weight:600" class="{{ 'red' if r.display_status == 'overdue' else ('muted' if r.display_status != 'ongoing' else '') }}">
+              {% if r.display_status == 'ongoing' %}{{ t('reservations.left', d=fdur((r.ends_at - now).total_seconds() / 60)) }}
+              {% elif r.display_status == 'upcoming' %}{{ t('reservations.starts_in', d=fdur((r.starts_at - now).total_seconds() / 60)) }}
+              {% elif r.display_status == 'overdue' %}{{ t('reservations.overdue_by', d=fdur((now - r.ends_at).total_seconds() / 60)) }}
+              {% else %}{{ t('reservations.duration', d=fdur(total / 60)) }}{% endif %}</span>
+            <div class="bar {{ 'red' if r.display_status == 'overdue' else '' }}" aria-hidden="true" style="height:6px;margin-top:6px"><span style="width:{{ pct }}%"></span></div>
+          </td>
+          <td><span class="badge {{ {'ongoing': 'dark', 'upcoming': 'dashed', 'overdue': 'red', 'completed': 'soft', 'cancelled': 'soft'}[r.display_status] }}">{{ t('reservation_status.' ~ r.display_status) }}</span></td>
+          <td><div class="actions">
+            {% if r.display_status in ('ongoing', 'overdue') and can('manage_bookings_subscriptions') %}<button class="btn small" data-api="POST /api/v1/reservations/{{ r.id }}/extend" data-body='{"minutes": 60}' aria-label="{{ t('reservations.extend_aria', name=r.customer_name) }}">+1 h</button>{% endif %}
+            {% if r.display_status in ('ongoing', 'overdue') and can('acknowledge_alarm') %}<button class="btn small" data-api="POST /api/v1/reservations/{{ r.id }}/complete">{{ t('action.end') }}</button>{% endif %}
+            {% if r.display_status == 'upcoming' and can('acknowledge_alarm') %}<button class="btn small" data-api="POST /api/v1/reservations/{{ r.id }}/cancel" data-confirm="{{ t('reservations.cancel_confirm', name=r.customer_name) }}">{{ t('action.cancel') }}</button>{% endif %}
+          </div></td>
+        </tr>
+      {% else %}
+        <tr><td colspan="8" class="empty">{{ t('reservations.empty') }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="row muted" style="justify-content:space-between;font-size:14px"><span>{{ t('reservations.n_shown', n=rows|length) }}</span></div>
+</section>
+
+{% include "_manual.html" %}
+{% endblock %}

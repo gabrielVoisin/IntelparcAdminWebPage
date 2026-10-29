@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}{{ t('nav.plan') }}{% endblock %}
+{% block live %}bay.,payment_alarm.{% endblock %}
+
+{% block content %}
+{% set base = '/plan?site=' ~ site.id ~ '&zone=' ~ zone.id %}
+{% macro matches(b) -%}
+{%- if flt == 'all' -%}1
+{%- elif flt == 'occupied' and b.status in ('occupied', 'alarm') -%}1
+{%- elif flt == 'accessible' and b.kind == 'accessible' -%}1
+{%- elif flt == 'ev' and b.kind == 'ev' -%}1
+{%- elif flt == b.status -%}1
+{%- endif -%}
+{%- endmacro %}
+<header class="page-head">
+  <div><div class="eyebrow"><a href="/" style="color:var(--muted)">{{ t('nav.dashboard') }}</a> / {{ t('nav.plan') }}</div><h1>{{ t('nav.plan') }}</h1></div>
+  <form class="search" action="/customers" role="search">
+    <label class="sr-only" for="q">{{ t('plan.search') }}</label>
+    <input id="q" name="q" type="search" placeholder="{{ t('plan.search') }}…">
+  </form>
+</header>
+
+<div class="row" style="justify-content:space-between">
+  <div class="row">
+    <div class="segmented white" role="group" aria-label="{{ t('plan.site') }}">
+      {% for s in sites %}<a href="/plan?site={{ s.id }}" aria-current="{{ 'true' if s.id == site.id else 'false' }}">{{ s.code }}</a>{% endfor %}
+    </div>
+    <div class="segmented white" role="group" aria-label="{{ t('plan.zone') }}">
+      {% for z in zones %}<a href="/plan?site={{ site.id }}&zone={{ z.id }}" aria-current="{{ 'true' if z.id == zone.id else 'false' }}">{{ t('zone.' ~ z.code) }}</a>{% endfor %}
+    </div>
+  </div>
+  <div class="chips" role="group" aria-label="{{ t('plan.filter') }}">
+    {% for key in ['all', 'free', 'occupied', 'alarm', 'reserved', 'accessible', 'ev'] %}
+      <a class="chip {% if key == 'alarm' %}alarm{% endif %}" href="{{ base }}&filter={{ key }}" aria-current="{{ 'true' if flt == key else 'false' }}">{{ t('plan.filter_' ~ key) }}{% if key == 'alarm' %} ({{ counts.alarm }}){% endif %}</a>
+    {% endfor %}
+  </div>
+</div>
+
+<section class="kpis" aria-label="{{ t('plan.summary') }}" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+  {% for key in ['free', 'occupied', 'alarm', 'reserved', 'blocked'] %}
+  <div class="kpi {% if key == 'alarm' %}alert{% endif %}"><span class="label">{{ t('plan.count_' ~ key) }}</span><span class="value">{{ counts[key] }}</span></div>
+  {% endfor %}
+  <div class="kpi"><span class="label">{{ t('plan.occupancy') }}</span><span class="value">{{ counts.rate }} %</span></div>
+</section>
+
+<div class="split">
+  <section class="card bordered wide" aria-labelledby="plan-title">
+    <div class="card-head"><h2 id="plan-title">{{ t('plan.map') }} · {{ t('zone.' ~ zone.code) }}</h2><span style="font-size:13px">{{ t('plan.click_hint', n=counts.free + counts.occupied + counts.alarm + counts.reserved + counts.blocked) }}</span></div>
+    <div class="legend">
+      <span><i class="sw" style="border:1.5px solid #000"></i>{{ t('bay_status.free') }}</span>
+      <span><i class="sw" style="background:#000"></i>{{ t('bay_status.occupied') }}</span>
+      <span class="red" style="font-weight:600"><i class="sw" style="background:var(--red)"></i>{{ t('bay_status.alarm') }}</span>
+      <span><i class="sw" style="border:2px dashed #000"></i>{{ t('bay_status.reserved') }}</span>
+      <span><i class="sw" style="border:1.5px solid #000;background:repeating-linear-gradient(45deg,#fff 0 3px,#9A9A9A 3px 6px)"></i>{{ t('bay_status.blocked') }}</span>
+    </div>
+    <div class="table-wrap">
+      <div class="plan">
+        {% for row in rows %}
+          {% if loop.index0 == 1 %}<div class="aisle" aria-hidden="true"><span>{{ t('plan.entrance') }}</span><i></i><span>{{ t('plan.aisle') }} A →</span><i></i></div>{% endif %}
+          {% if loop.index0 == 2 %}<div class="divider" aria-hidden="true"></div>{% endif %}
+          {% if loop.index0 >= 3 and loop.index0 % 2 == 1 %}<div class="aisle" aria-hidden="true"><i></i><span>{{ t('plan.aisle') }} {{ 'BCDEFG'[(loop.index0 // 2) - 1] }} →</span><i></i>{% if loop.last or loop.index0 == 3 %}<span>{{ t('plan.exit') }}</span>{% endif %}</div>{% endif %}
+          {% if loop.index0 >= 4 and loop.index0 % 2 == 0 %}<div class="divider" aria-hidden="true"></div>{% endif %}
+          <div class="bay-row">
+            {% for b in row %}
+              {% set sub = t('bay_tag.' ~ b.status) if b.status in ('alarm', 'reserved', 'blocked') else (t('bay_tag.' ~ b.kind) if b.kind != 'standard' else '') %}
+              <a class="bay {{ b.status }} {% if not matches(b) %}dim{% endif %} {% if detail and detail.id == b.id %}selected{% endif %}"
+                 href="{{ base }}&filter={{ flt }}&bay={{ b.id }}"
+                 aria-label="{{ t('plan.bay') }} {{ b.number }}, {{ t('bay_status.' ~ b.status) }}{% if b.plate %}, {{ b.plate }}{% endif %}">
+                <b>{{ b.number }}</b><small>{{ sub }}</small>
+              </a>
+            {% endfor %}
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </section>
+
+  {% if detail %}
+  <aside class="card narrow" aria-labelledby="bay-title">
+    <div class="row" style="justify-content:space-between;align-items:flex-start">
+      <div><div class="muted" style="font-size:13px">{{ detail.zone_name }} · {{ t('bay_kind.' ~ detail.kind) }}</div>
+        <h2 id="bay-title" class="mono" style="font-size:28px">{{ t('plan.bay') }} {{ detail.number }}</h2></div>
+      <span class="badge {{ {'alarm': 'red', 'occupied': 'dark', 'reserved': 'dashed', 'blocked': 'soft', 'free': 'outline'}[detail.status] }}">{{ t('bay_status.' ~ detail.status) }}</span>
+    </div>
+    {% if detail.session %}
+    <div class="alarm-card">
+      <span class="plate-tag" style="font-size:20px;align-self:flex-start">{{ detail.session.plate or '—' }}</span>
+      <div class="form-grid" style="grid-template-columns:1fr 1fr;gap:12px">
+        <div><span class="muted" style="font-size:12px">{{ t('plan.arrival') }}</span><div><b>{{ ftime(detail.session.entered_at) }}</b></div></div>
+        <div><span class="muted" style="font-size:12px">{{ t('plan.duration') }}</span><div><b>{{ fdur(((now - detail.session.entered_at).total_seconds() / 60)) }}</b></div></div>
+        <div class="full"><span class="muted" style="font-size:12px">{{ t('plan.payment') }}</span><div><b>
+          {% if detail.session.subscriber %}{{ t('plan.paid_subscriber') }}{% elif detail.session.paid_until %}{{ t('plan.paid_until', time=ftime(detail.session.paid_until)) }}{% else %}{{ t('plan.unpaid') }}{% endif %}</b></div></div>
+      </div>
+    </div>
+    {% endif %}
+    {% if detail.alarm %}
+    <div class="alarm-card open">
+      <div><b class="red" style="font-size:13px">{{ t('plan.alarm_detected', time=ftime(detail.alarm.detected_at)) }}</b><div style="font-size:14px">{{ t('alarm_reason.' ~ detail.alarm.reason, minutes=detail.alarm.detail) }}</div></div>
+      <div class="row">
+        {% if can('acknowledge_alarm') %}<button class="btn" style="flex:1" data-api="POST /api/v1/payment-alarms/{{ detail.alarm.id }}/acknowledge">{{ t('action.acknowledge') }}</button>{% endif %}
+        {% if can('issue_fine') %}<button class="btn danger" style="flex:1" data-api="POST /api/v1/payment-alarms/{{ detail.alarm.id }}/fine" data-body="{}" data-confirm="{{ t('dashboard.fine_confirm', plate=detail.plate or '') }}">{{ t('action.issue_fine') }}</button>{% endif %}
+      </div>
+    </div>
+    {% endif %}
+    {% if detail.reservation %}
+    <div class="alarm-card" style="border:2px dashed var(--ink)">
+      <span class="muted" style="font-size:12px">{{ t('plan.reserved_for') }}</span>
+      <b>{{ detail.reservation.customer }} · {{ detail.reservation.plate or '—' }}</b>
+      <span style="font-size:14px">{{ ftime(detail.reservation.starts_at) }} → {{ ftime(detail.reservation.ends_at) }}</span>
+    </div>
+    {% endif %}
+    {% if detail.status == 'free' %}<p style="margin:0;font-size:14px" class="muted">{{ t('plan.free_text') }}</p>{% endif %}
+    {% if detail.status == 'blocked' %}<p style="margin:0;font-size:14px" class="muted">{{ t('plan.blocked_text', reason=detail.blocked_reason or '—') }}</p>{% endif %}
+    {% if can('manage_bookings_subscriptions') %}
+    <div class="row">
+      {% if detail.admin_state == 'open' %}
+        <button class="btn" style="flex:1" data-api="PATCH /api/v1/bays/{{ detail.id }}" data-body='{"admin_state": "blocked", "blocked_reason": "{{ t('plan.blocked_default') }}"}'>{{ t('plan.block') }}</button>
+      {% else %}
+        <button class="btn dark" style="flex:1" data-api="PATCH /api/v1/bays/{{ detail.id }}" data-body='{"admin_state": "open"}'>{{ t('plan.unblock') }}</button>
+      {% endif %}
+    </div>
+    {% endif %}
+    <div>
+      <h3 style="margin-bottom:8px">{{ t('plan.history') }}</h3>
+      {% for h in detail.history %}
+        <div class="row" style="padding:8px 0;border-bottom:1px solid #EEEFEA;font-size:14px;flex-wrap:nowrap">
+          <span class="mono muted" style="min-width:92px">{{ ftime(h.at) }}</span><span>{{ t('history.' ~ h.kind, plate=h.plate or '') }}</span>
+        </div>
+      {% else %}<p class="muted" style="font-size:14px">{{ t('plan.no_history') }}</p>{% endfor %}
+    </div>
+  </aside>
+  {% endif %}
+</div>
+
+{% if show_photo %}
+<section class="card" aria-labelledby="photo-title">
+  <div class="card-head">
+    <div><h2 id="photo-title">{{ t('plan.satellite') }}</h2><span class="muted" style="font-size:13px">{{ t('plan.satellite_sub') }}</span></div>
+    <span class="legend"><span><i class="sw" style="border:3px solid #fff;box-shadow:0 0 0 1.5px #000"></i>{{ t('plan.selected') }}</span></span>
+  </div>
+  <div class="table-wrap">
+    <div class="photo">
+      <img src="/static/img/parking-aerien.jpg" alt="{{ t('plan.photo_alt') }}">
+      {% for row in rows %}{% for b in row if b.photo_x is not none %}
+        <a href="{{ base }}&filter={{ flt }}&bay={{ b.id }}" class="{% if detail and detail.id == b.id %}selected{% endif %}"
+           style="left:{{ b.photo_x }}%;top:{{ b.photo_y }}%;width:6.25%;height:16.3%"
+           aria-label="{{ t('plan.bay') }} {{ b.number }}"><span style="{{ 'bottom:3px' if b.plan_row in (1, 3) else 'top:3px' }}">{{ b.number }}</span></a>
+      {% endfor %}{% endfor %}
+    </div>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

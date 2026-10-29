@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}{{ t('nav.dashboard') }}{% endblock %}
+{% block live %}bay.,payment_alarm.{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div><div class="eyebrow">{{ today }} · {{ t('dashboard.updated_at', time=ftime(now)) }}</div><h1>{{ t('nav.dashboard') }}</h1></div>
+  <div class="row">
+    <form class="search" action="/customers" role="search">
+      <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#555963" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+      <label class="sr-only" for="q">{{ t('dashboard.search_plate') }}</label>
+      <input id="q" name="q" type="search" placeholder="{{ t('dashboard.search_plate') }}…">
+    </form>
+    {% if can('manage_bookings_subscriptions') %}<a class="btn primary" href="/reservations?new=1">+ {{ t('reservations.new') }}</a>{% endif %}
+  </div>
+</header>
+
+{# Aerial view of the outdoor zone (black and white, red = payment alarm) #}
+<section class="card bordered" aria-labelledby="aerial-title">
+  <div class="card-head">
+    <div><h2 id="aerial-title">{{ t('dashboard.aerial_title') }}</h2><span class="muted" style="font-size:13px">{{ t('dashboard.aerial_sub') }}</span></div>
+    <div class="legend" style="font-size:14px">
+      <span><i class="sw" style="background:#000"></i><b>{{ aerial_counts.occupied }}</b> {{ t('dashboard.parked') }}</span>
+      <span class="red"><i class="sw" style="background:var(--red)"></i><b>{{ aerial_counts.alarm }}</b> {{ t('dashboard.payment_alerts') }}</span>
+      <span><i class="sw" style="border:1px solid #000"></i><b>{{ aerial_counts.free + aerial_counts.reserved }}</b> {{ t('dashboard.free') }}</span>
+    </div>
+  </div>
+  <div class="table-wrap">
+    {% set tops = [16, 186, 276, 446] %}
+    <svg viewBox="0 0 880 552" role="img" aria-label="{{ t('dashboard.aerial_aria', occupied=aerial_counts.occupied, alarms=aerial_counts.alarm, free=aerial_counts.free + aerial_counts.reserved) }}" style="display:block;width:100%;min-width:600px;height:auto;border:1px solid #000;border-radius:8px">
+      <defs><g id="car" stroke="#000" stroke-width="1.5"><rect width="38" height="76" rx="10"/><rect x="4" y="15" width="30" height="13" rx="3" fill="#fff"/><rect x="5" y="57" width="28" height="9" rx="3" fill="#fff"/><rect x="-3" y="19" width="4" height="6" rx="1.5"/><rect x="37" y="19" width="4" height="6" rx="1.5"/></g></defs>
+      <rect width="880" height="552" fill="#fff"/>
+      <g fill="none" stroke="#000" stroke-width="2">
+        <path d="M40 0V106M40 186V552M840 0V366M840 446V552M55 16H825M55 276H825M55 536H825"/>
+        {% for top, h in [(16, 90), (186, 180), (446, 90)] %}{% for i in range(15) %}<path d="M{{ 55 + i * 55 }} {{ top }}v{{ h }}"/>{% endfor %}{% endfor %}
+      </g>
+      <g fill="none" stroke="#000" stroke-width="1.5" stroke-dasharray="14 12"><path d="M40 146H840M40 406H840"/></g>
+      <text x="52" y="132" font-size="13" font-weight="600" letter-spacing="1.5" font-family="sans-serif">{{ t('plan.entrance') }}</text>
+      <text x="828" y="436" font-size="13" font-weight="600" letter-spacing="1.5" font-family="sans-serif" text-anchor="end">{{ t('plan.exit') }}</text>
+      {% for b in aerial if b.plan_row and b.plan_row <= 4 %}
+        {% set x = 55 + (b.plan_col - 1) * 55 %}{% set y = tops[b.plan_row - 1] %}
+        <a href="/plan?bay={{ b.id }}">
+        <title>{{ t('plan.bay') }} {{ b.number }} · {{ t('bay_status.' ~ b.status) }}{% if b.plate %} · {{ b.plate }}{% endif %}</title>
+        {% if b.status == 'alarm' %}<rect x="{{ x + 2 }}" y="{{ y + 2 }}" width="51" height="86" rx="3" fill="none" stroke="#D7261E" stroke-width="3"/>{% endif %}
+        {% if b.status in ('occupied', 'alarm') %}<use href="#car" x="{{ x + 8.5 }}" y="{{ y + 7 }}" fill="{{ '#D7261E' if b.status == 'alarm' else '#000' }}"/>{% endif %}
+        <text x="{{ x + 27.5 }}" y="{{ y + 49 }}" text-anchor="middle" font-family="monospace" font-size="12" font-weight="600" fill="{{ '#fff' if b.status in ('occupied', 'alarm') else '#000' }}">{{ b.number }}</text>
+        </a>
+      {% endfor %}
+    </svg>
+  </div>
+</section>
+
+<section class="kpis" aria-label="{{ t('dashboard.key_figures') }}">
+  <div class="kpi"><span class="label">{{ t('dashboard.free_spaces') }}</span><span class="value">{{ kpi.free_bays }}<small> / {{ kpi.total_bays }}</small></span></div>
+  <div class="kpi"><span class="label">{{ t('dashboard.occupancy') }}</span><span class="value">{{ kpi.occupancy_pct }} %</span><div class="bar" aria-hidden="true"><span style="width:{{ kpi.occupancy_pct }}%"></span></div></div>
+  <div class="kpi"><span class="label">{{ t('dashboard.entries_today') }}</span><span class="value">{{ kpi.entries_today }}</span><span class="note">{{ t('dashboard.exits') }}{{ ' :' if locale == 'fr' else ':' }} {{ kpi.exits_today }}</span></div>
+  <div class="kpi"><span class="label">{{ t('dashboard.revenue_today') }}</span><span class="value">{{ money(kpi.revenue_today) }}</span><span class="note">{{ t('dashboard.incl_subscriptions') }}{{ ' :' if locale == 'fr' else ':' }} {{ money(kpi.revenue_subscriptions_today) }}</span></div>
+</section>
+
+<div class="split">
+  <section class="card narrow" aria-labelledby="map-title">
+    <div class="card-head"><h2 id="map-title">{{ t('dashboard.city_map') }}</h2><span class="muted" style="font-size:13px">{{ sites|length }} {{ t('dashboard.sites') }}</span></div>
+    {% set lats = sites|map(attribute='latitude')|select|list %}{% set lons = sites|map(attribute='longitude')|select|list %}
+    <div class="city">
+      <svg aria-hidden="true" viewBox="0 0 400 420" preserveAspectRatio="xMidYMid slice">
+        <rect width="400" height="420" fill="#ECEDE6"/><rect x="230" y="34" width="120" height="76" rx="6" fill="#CFE0C3"/>
+        <path d="M-10 300C80 262 160 336 250 292S380 252 420 272" fill="none" stroke="#A9C8E8" stroke-width="26"/>
+        <g fill="none" stroke="#fff" stroke-linecap="round"><path d="M0 60H400M0 200H400M0 370H400M70 0V420M300 0V420" stroke-width="6"/><path d="M0 120H400M150 0V420M20 420L330 0" stroke-width="11"/></g>
+      </svg>
+      {% for s in sites if s.latitude and lats %}
+        {% set left = 15 + 70 * ((s.longitude - lons|min) / ((lons|max - lons|min) or 1)) %}
+        {% set top = 20 + 65 * ((lats|max - s.latitude) / ((lats|max - lats|min) or 1)) %}
+        <a class="pin {% if site and s.id == site.id %}on{% elif s.free_bays == 0 %}full{% endif %}" href="/?site={{ s.id }}" style="left:{{ left }}%;top:{{ top }}%">
+          <span><b>{{ s.code }}</b>{{ t('dashboard.full') if s.free_bays == 0 else t('dashboard.n_free', n=s.free_bays) }}</span><i></i>
+        </a>
+      {% endfor %}
+    </div>
+    {% for s in sites %}
+      <a class="site-row {% if site and s.id == site.id %}on{% endif %}" href="/?site={{ s.id }}">
+        <span><b style="display:block">{{ s.name }}</b><span class="muted" style="font-size:13px">{{ s.address_line or '' }} {{ s.city or '' }}</span></span>
+        <span class="badge {{ 'soft' if s.free_bays == 0 else ('amber' if s.free_bays / (s.total_bays or 1) < 0.15 else 'blue') }}">{{ t('dashboard.full') if s.free_bays == 0 else t('dashboard.n_free', n=s.free_bays) }}</span>
+      </a>
+    {% endfor %}
+    {% if site %}
+    <div class="alarm-card">
+      <div class="row" style="justify-content:space-between"><b>{{ site.name }}</b><span class="muted" style="font-size:13px">{% if hourly %}{{ money(hourly.amount_cents) }} / h{% endif %}</span></div>
+      <div class="row" style="justify-content:space-between;font-size:13px"><span class="muted">{{ t('dashboard.free_spaces') }}</span><b>{{ site.free_bays }} / {{ site.total_bays }}</b></div>
+      <div class="bar" aria-hidden="true"><span style="width:{{ (100 * site.occupied_bays / (site.total_bays or 1))|round }}%"></span></div>
+      <div class="row">
+        {% if site.latitude %}<a class="btn" style="flex:1" href="https://www.openstreetmap.org/directions?to={{ site.latitude }},{{ site.longitude }}" target="_blank" rel="noopener">{{ t('dashboard.directions') }}</a>{% endif %}
+        <a class="btn primary" style="flex:1" href="/plan?site={{ site.id }}">{{ t('dashboard.open_site') }}</a>
+      </div>
+    </div>
+    {% endif %}
+  </section>
+
+  <section class="card narrow" aria-labelledby="alarms-title">
+    <div class="card-head">
+      <h2 id="alarms-title">{{ t('dashboard.alarms') }}</h2>
+      {% set open_count = alarms|selectattr('status', 'equalto', 'open')|list|length %}
+      <span class="badge {{ 'red' if open_count else 'soft' }}">{{ t('dashboard.n_active', n=open_count) if open_count else t('dashboard.no_active_alarm') }}</span>
+    </div>
+    {% for a in alarms %}
+      <div class="alarm-card {% if a.status == 'open' %}open{% endif %}">
+        <div class="row" style="justify-content:space-between;align-items:flex-start">
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <span class="plate-tag" style="align-self:flex-start">{{ a.plate or '—' }}</span>
+            <b style="font-size:14px">{{ a.bay_label or '—' }}</b>
+          </div>
+          <span class="badge {{ 'red' if a.status == 'open' else ('dark' if a.status == 'fined' else 'soft') }}">{{ t('alarm_status.' ~ a.status) }}</span>
+        </div>
+        <div><div style="font-size:14px">{{ t('alarm_reason.' ~ a.reason, minutes=a.detail) }}</div><div class="muted" style="font-size:13px">{{ t('dashboard.detected_at', time=ftime(a.detected_at)) }}</div></div>
+        {% if a.status == 'open' %}
+        <div class="row">
+          {% if can('acknowledge_alarm') %}<button class="btn" style="flex:1" data-api="POST /api/v1/payment-alarms/{{ a.id }}/acknowledge" data-success="{{ t('dashboard.ack_done') }}">{{ t('action.acknowledge') }}</button>{% endif %}
+          {% if can('issue_fine') %}<button class="btn danger" style="flex:1" data-api="POST /api/v1/payment-alarms/{{ a.id }}/fine" data-body="{}" data-confirm="{{ t('dashboard.fine_confirm', plate=a.plate or '') }}" data-success="{{ t('dashboard.fine_done') }}">{{ t('action.issue_fine') }}</button>{% endif %}
+        </div>
+        {% elif can('manage_bookings_subscriptions') %}
+        <div class="row" style="justify-content:space-between"><span class="muted" style="font-size:13px">{{ t('dashboard.handled_at', time=ftime(a.handled_at)) }}</span><button class="btn ghost" data-api="POST /api/v1/payment-alarms/{{ a.id }}/reopen">{{ t('action.undo') }}</button></div>
+        {% endif %}
+      </div>
+    {% else %}
+      <p class="empty">{{ t('dashboard.no_active_alarm') }}</p>
+    {% endfor %}
+  </section>
+</div>
+{% endblock %}

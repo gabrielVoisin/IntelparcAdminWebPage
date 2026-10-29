@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="{{ locale }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ t('app.name') }}{% endblock %} · {{ t('app.name') }}</title>
+<link rel="stylesheet" href="/static/css/app.css">
+<script>
+  window.PK_I18N = {
+    errors: {
+{%- for code in ['invalid_credentials', 'permission_denied', 'insufficient_role', 'bay_already_booked', 'bay_blocked', 'alarm_not_open',
+                 'daily_pass_cheaper_than_one_hour', 'plate_already_registered', 'email_already_used', 'cannot_demote_or_disable_yourself',
+                 'csrf_header_missing', 'refresh_token_invalid', 'user_inactive', 'site_not_allowed', 'ends_before_start', 'invalid_period',
+                 'reservation_closed', 'subscription_terminated', 'bay_or_customer_not_found'] %}
+      {{ code }}: {{ t('error.' ~ code)|tojson }},
+{%- endfor %}
+{%- for code in ['alarm', 'bay', 'controller', 'customer', 'invitation', 'member', 'plan', 'reservation', 'site', 'subscription', 'vehicle', 'zone'] %}
+      {{ code }}_not_found: {{ t('error.not_found')|tojson }},
+{%- endfor %}
+    }
+  };
+</script>
+<script src="/static/js/app.js" defer></script>
+</head>
+<body data-live="{% block live %}{% endblock %}">
+<div class="shell">
+  <nav class="sidebar" aria-label="{{ t('nav.main') }}">
+    <div class="brand">
+      <div class="logo" aria-hidden="true">P</div>
+      <div><div class="name">{{ t('app.site_name') }}</div><div class="sub">{{ t('app.back_office') }}</div></div>
+    </div>
+    <div class="nav">
+      {% for key, href, label in nav %}
+      <a href="{{ href }}" {% if active == key %}aria-current="page"{% endif %}>{{ t(label) }}</a>
+      {% endfor %}
+    </div>
+    <div class="foot">
+      <div class="me">
+        <div class="avatar" aria-hidden="true">{{ user.full_name[:1] }}{{ (user.full_name.split(' ')[-1] or ' ')[:1] }}</div>
+        <div><div style="font-size:14px;font-weight:600">{{ user.full_name }}</div><div style="font-size:13px;color:#B5B8BF">{{ t('role.' ~ user.role) }}</div></div>
+      </div>
+      <div class="langs" aria-label="{{ t('nav.language') }}">
+        {% for code in locales %}<a href="/lang/{{ code }}" aria-current="{{ 'true' if code == locale else 'false' }}" lang="{{ code }}">{{ code|upper }}</a>{% endfor %}
+        <a href="/logout" style="margin-left:auto;white-space:nowrap">{{ t('nav.logout') }}</a>
+      </div>
+    </div>
+  </nav>
+  <main class="main">
+    {% block content %}{% endblock %}
+  </main>
+</div>
+</body>
+</html>

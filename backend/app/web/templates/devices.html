@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}{{ t('nav.devices') }}{% endblock %}
+{% block live %}device_event,controller.{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div><div class="eyebrow">{{ t('devices.subtitle') }} · {{ fdt(now) }}</div><h1>{{ t('nav.devices') }}</h1></div>
+  <div class="row">
+    <span class="badge {{ 'red' if totals.alarms else 'soft' }}" style="font-size:14px;padding:8px 14px">{{ t('devices.n_alarms', n=totals.alarms) }}</span>
+    <span class="badge" style="font-size:14px;padding:8px 14px;{{ 'background:var(--amber-soft);color:var(--amber-ink)' if totals.warnings else 'background:var(--bg);color:var(--muted)' }}">{{ t('devices.n_warnings', n=totals.warnings) }}</span>
+  </div>
+</header>
+
+<div class="segmented white" role="group" aria-label="{{ t('devices.filter') }}">
+  {% for key in ['all', 'alarm', 'warning', 'unack'] %}<a href="/devices?filter={{ key }}" aria-current="{{ 'true' if flt == key else 'false' }}">{{ t('devices.filter_' ~ key) }}</a>{% endfor %}
+</div>
+
+{% for c in controllers %}
+<section class="cabinet{{ '' if c.configured else ' idle' }}" aria-label="{{ c.name }}">
+  <div class="cabinet-head">
+    <div class="row">
+      <span class="lamp {{ 'idle' if not c.configured else ('alarm' if c.active_alarms else ('warning' if c.active_warnings else 'ok')) }}" aria-hidden="true"></span>
+      <h2>{{ t('devices.cabinet', site=c.site_name.split(' · ')[0]) }}</h2>
+      <span class="mono" style="font-size:13px;color:#B5B8BF">{{ c.code }} · {{ t('devices.not_configured') if not c.configured else (t('devices.online') if c.online else t('devices.offline')) }}</span>
+    </div>
+    <div class="row">
+      <span style="font-size:13px;font-weight:600">{% if not c.configured %}{% elif c.active_alarms %}{{ t('devices.n_active_alarms', n=c.active_alarms) }}{% elif c.active_warnings %}{{ t('devices.n_active_warnings', n=c.active_warnings) }}{% else %}{{ t('devices.no_fault') }}{% endif %}</span>
+      {% if c.unacknowledged and can('acknowledge_alarm') %}
+        <button class="btn small" style="background:#fff;color:var(--ink);border:0" data-api="POST /api/v1/controllers/{{ c.id }}/acknowledge" aria-label="{{ t('devices.ack_aria', name=c.name) }}">{{ t('action.acknowledge') }}</button>
+      {% endif %}
+    </div>
+  </div>
+  <div class="sensors">
+    <div class="sensors-head">
+      <h3>{{ t('devices.sensors_title') }}</h3>
+      <span class="summary">{{ t('devices.sensors_summary', total=c.sensors|length, active=c.sensor_counts.active, fault=c.sensor_counts.fault, idle=c.sensor_counts.not_configured) }}</span>
+    </div>
+    {% if not c.configured %}<p style="margin:0 0 12px;font-size:13px;color:var(--muted)">{{ t('devices.cabinet_not_installed') }}</p>{% endif %}
+    <div class="sensor-grid" role="list">
+      {% for d in c.sensors %}
+        {% set where = t('devices.sensor_bay', zone=d.zone_code, number=d.bay_number) if d.bay_number else '' %}
+        <div class="sensor {{ d.state }}" role="listitem" title="{{ d.code }} · {{ t('devices.sensor_' ~ d.state) }}{{ ' · ' ~ where if where }}{{ ' · ' ~ d.label if d.label }}">{{ d.code[3:] }}</div>
+      {% endfor %}
+    </div>
+    {% for d in c.sensors if d.state != 'not_configured' %}
+      <p class="sensor-detail"><span class="mono" style="font-weight:600">{{ d.code }}</span> · {{ t('devices.sensor_' ~ d.state) }}{% if d.bay_number %} · {{ t('devices.sensor_bay', zone=d.zone_code, number=d.bay_number) }}{% endif %}{% if d.label %} · {{ d.label }}{% endif %}</p>
+    {% endfor %}
+    <div class="sensor-legend">
+      <span><i class="sensor active" aria-hidden="true">&nbsp;</i>{{ t('devices.sensor_active') }}</span>
+      <span><i class="sensor fault" aria-hidden="true">&nbsp;</i>{{ t('devices.sensor_fault') }}</span>
+      <span><i class="sensor not_configured" aria-hidden="true">&nbsp;</i>{{ t('devices.sensor_not_configured') }}</span>
+    </div>
+  </div>
+  {% if c.configured %}
+  <div class="table-wrap">
+    <table class="data events" style="min-width:720px">
+      <thead><tr><th style="width:70px">{{ t('devices.col_time')|upper }}</th><th style="width:100px">{{ t('devices.col_priority')|upper }}</th><th style="width:120px">{{ t('devices.col_code')|upper }}</th><th>{{ t('devices.col_message')|upper }}</th><th style="width:190px">{{ t('devices.col_state')|upper }}</th></tr></thead>
+      <tbody>
+      {% for e in c.shown %}
+        {% set cls = 'ev-cleared' if e.state == 'cleared' else ('ev-ack' if e.state == 'active_acknowledged' else ('ev-' ~ e.priority ~ ' ev-unack')) %}
+        <tr class="{{ cls }}" {% if e.state == 'active_acknowledged' %}style="box-shadow:inset 4px 0 0 {{ '#D7261E' if e.priority == 'alarm' else '#E39B00' }}"{% endif %}>
+          <td class="mono">{{ ftime(e.raised_at) }}</td>
+          <td><span class="prio {{ 'cleared' if e.state == 'cleared' else e.priority }}">{{ t('priority.' ~ e.priority)|upper }}</span></td>
+          <td class="mono" style="font-weight:600">{{ e.code }}</td>
+          <td class="msg">{{ t(e.message_key) }}</td>
+          <td style="font-size:13px">{{ t('event_state.' ~ e.state) }}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="5" style="color:#145C39;font-weight:600">{{ t('devices.empty_all') if flt == 'all' else t('devices.empty_filter') }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+{% endfor %}
+{% endblock %}
