@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}{{ t('app.name') }}{% endblock %} · {{ t('app.name') }}</title>
-<link rel="stylesheet" href="/static/css/app.css">
+<link rel="stylesheet" href="/static/css/app.css?v={{ asset_v }}">
 <script>
   window.PK_I18N = {
     errors: {
@@ -20,7 +20,7 @@
     }
   };
 </script>
-<script src="/static/js/app.js" defer></script>
+<script src="/static/js/app.js?v={{ asset_v }}" defer></script>
 </head>
 <body data-live="{% block live %}{% endblock %}">
 <div class="shell">

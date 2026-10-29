@@ -32,6 +32,8 @@ from app.services import queries, reports
 from app.web import formatting as f
 
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
+# Appended to the CSS/JS links (?v=...) so browsers fetch the new files after an update instead of a cached copy.
+ASSET_VERSION = str(int(max(p.stat().st_mtime for p in (Path(__file__).parent / "static").rglob("*") if p.is_file())))
 router = APIRouter(include_in_schema=False)
 
 NAV = [
@@ -88,6 +90,7 @@ def render(request: Request, template: str, user: StaffUser | None, active: str 
         "dtinput": f.fmt_input_datetime,
         "num": lambda v, digits=1: f.fmt_number(v, locale, digits),
         "today": f.fmt_today(locale, datetime.now(UTC)),
+        "asset_v": ASSET_VERSION,
     }
     context.update(ctx)
     return templates.TemplateResponse(request, template, context)
