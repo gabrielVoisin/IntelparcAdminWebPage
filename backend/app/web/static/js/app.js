@@ -132,10 +132,18 @@
     const L = JSON.parse(panel.querySelector("[data-live-i18n]").textContent);
     const set = (key, text, cls) => { const el = panel.querySelector(`[data-v="${key}"]`); el.textContent = text; el.className = cls || (key === "plate" ? "mono" : ""); };
     const time = (iso) => iso ? new Date(iso).toLocaleTimeString(document.documentElement.lang || undefined) : "–";
-    panel.querySelector("[data-live-lamp]").className = "lamp " + (!data.online ? "alarm" : data.thermal_state === "normal" ? "ok" : "warning");
-    panel.querySelector("[data-live-offline]").hidden = !!data.online;
-    panel.querySelector("[data-live-img]").hidden = !data.online;
-    if (!data.online) { set("occupied", L.offline); return; }
+    const cameraLost = data.online && data.camera_ok === false;
+    panel.querySelector("[data-live-lamp]").className = "lamp " + (!data.online || cameraLost ? "alarm" : data.thermal_state === "normal" ? "ok" : "warning");
+    const offline = panel.querySelector("[data-live-offline]");
+    offline.hidden = data.online && !cameraLost;
+    offline.textContent = cameraLost ? `${L.camera_lost} (${L.last_frame} ${time(data.last_frame_at)})` : L.offline;
+    const img = panel.querySelector("[data-live-img]");
+    img.hidden = !data.online || cameraLost;
+    const seeing = data.online && !cameraLost;
+    if (seeing && panel.dataset.seeing === "false") img.src = `/devices/${panel.dataset.sensorId}/stream.mjpg?t=${Date.now()}`;  // the stream ended while the camera was lost
+    panel.dataset.seeing = seeing;
+    if (!data.online) { set("occupied", L.offline); set("camera", "–"); return; }
+    set("camera", cameraLost ? L.camera_lost_short : data.camera_ok === null ? L.camera_starting : L.camera_ok, cameraLost ? "red" : "");
     set("occupied", data.occupied ? L.occupied : L.free, data.occupied ? "occupied" : "free");
     set("plate", data.plate || L.none);
     set("confidence", data.confidence == null ? "–" : Math.round(data.confidence * 100) + " %");
@@ -160,6 +168,8 @@
     panel.querySelector("[data-live-code]").textContent = btn.dataset.code;
     panel.querySelector("[data-live-where]").textContent = btn.dataset.where;
     panel.querySelector("[data-live-img]").src = `/devices/${id}/stream.mjpg?t=${Date.now()}`;
+    panel.dataset.sensorId = id;
+    panel.dataset.seeing = "true";
     panel.hidden = false;
     const poll = () => fetch(`/devices/${id}/live.json`, { credentials: "same-origin", cache: "no-store" })
       .then((r) => r.json()).then((data) => showValues(panel, data)).catch(() => showValues(panel, { online: false }));

@@ -389,6 +389,7 @@ def presence_sensors(db: Session, controller_id: uuid.UUID) -> list[dict]:
     for r in rows:
         d = dict(r._mapping)
         d["state"] = "not_configured" if not d["address"] else ("active" if d["status"] == "ok" else "fault")
+        d["simulated"] = (d["address"] or "").startswith("sim:")  # driven by the CarDetector simulator page
         out.append(d)
     return out
 

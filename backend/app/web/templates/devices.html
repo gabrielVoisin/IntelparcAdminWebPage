@@ -47,9 +47,11 @@
         {% endif %}
       {% endfor %}
     </div>
-    {% for d in c.sensors if d.state != 'not_configured' %}
+    {% set simulated = c.sensors|selectattr('simulated')|list %}
+    {% for d in c.sensors if d.state != 'not_configured' and not d.simulated %}
       <p class="sensor-detail"><span class="mono" style="font-weight:600">{{ d.code }}</span> · {{ t('devices.sensor_' ~ d.state) }}{% if d.bay_number %} · {{ t('devices.sensor_bay', zone=d.zone_code, number=d.bay_number) }}{% endif %}{% if d.label %} · {{ d.label }}{% endif %}</p>
     {% endfor %}
+    {% if simulated %}<p class="sensor-detail">{{ t('devices.simulated_summary', n=simulated|length, first=simulated[0].code, last=simulated[-1].code) }}</p>{% endif %}
     <section class="sensor-live" id="live-{{ c.id }}" hidden aria-live="polite">
       <div class="sensor-live-head">
         <div><span class="lamp idle" data-live-lamp aria-hidden="true"></span> <strong class="mono" data-live-code></strong> <span class="muted" data-live-where></span></div>
@@ -60,6 +62,7 @@
         <dl class="sensor-live-values">
           <div class="big"><dt>{{ t('live.bay') }}</dt><dd data-v="occupied">–</dd></div>
           <div class="big"><dt>{{ t('live.plate') }}</dt><dd class="mono" data-v="plate">–</dd></div>
+          <div><dt>{{ t('live.camera') }}</dt><dd data-v="camera">–</dd></div>
           <div><dt>{{ t('live.confidence') }}</dt><dd data-v="confidence">–</dd></div>
           <div><dt>{{ t('live.since') }}</dt><dd data-v="plate_since">–</dd></div>
           <div><dt>{{ t('live.analysed_fps') }}</dt><dd data-v="analysed_fps">–</dd></div>
@@ -70,7 +73,10 @@
         </dl>
       </div>
       <script type="application/json" data-live-i18n>{{ {"occupied": t('live.occupied'), "free": t('live.free'), "none": t('live.no_plate'),
-        "normal": t('live.thermal_normal'), "hot": t('live.thermal_hot'), "paused": t('live.thermal_paused'), "offline": t('live.offline')}|tojson }}</script>
+        "normal": t('live.thermal_normal'), "hot": t('live.thermal_hot'), "paused": t('live.thermal_paused'), "offline": t('live.offline'),
+        "camera_ok": t('live.camera_ok'), "camera_lost": t('device.camera_connection_lost'), "camera_starting": t('live.camera_starting'),
+        "camera_lost_short": t('live.camera_lost'),
+        "last_frame": t('live.last_frame')}|tojson }}</script>
     </section>
     <div class="sensor-legend">
       <span><i class="sensor active" aria-hidden="true">&nbsp;</i>{{ t('devices.sensor_active') }}</span>
