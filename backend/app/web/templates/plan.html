@@ -140,11 +140,11 @@
   </div>
   <div class="table-wrap">
     <div class="photo">
-      <img src="/static/img/parking-aerien.jpg" alt="{{ t('plan.photo_alt') }}">
+      <img src="/static/img/parking-aerien.jpg?v={{ asset_v }}" alt="{{ t('plan.photo_alt') }}">
       {% for row in rows %}{% for b in row if b.photo_x is not none %}
         <a href="{{ base }}&filter={{ flt }}&bay={{ b.id }}" class="{% if detail and detail.id == b.id %}selected{% endif %}"
            style="left:{{ b.photo_x }}%;top:{{ b.photo_y }}%;width:6.25%;height:16.3%"
-           aria-label="{{ t('plan.bay') }} {{ b.number }}"><span style="{{ 'bottom:3px' if b.plan_row in (1, 3) else 'top:3px' }}">{{ b.number }}</span></a>
+           aria-label="{{ t('plan.bay') }} {{ b.number }}">{% if b.is_occupied %}<img class="car" src="/static/img/car-row{{ b.plan_row or 1 }}.jpg?v={{ asset_v }}" alt="">{% endif %}<span style="{{ 'bottom:3px' if b.plan_row in (1, 3) else 'top:3px' }}">{{ b.number }}</span></a>
       {% endfor %}{% endfor %}
     </div>
   </div>

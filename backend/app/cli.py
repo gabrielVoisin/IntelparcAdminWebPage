@@ -2,6 +2,7 @@
 
     python -m app.cli seed-demo                         # load the demo data of the mockup
     python -m app.cli demo-sensors                      # reset the prototype sensor inventory (3 x 100)
+    python -m app.cli clear-demo-traffic                # remove the simulated cars, sessions, alarms, payments
     python -m app.cli create-admin EMAIL "Full Name"    # asks for the password
     python -m app.cli new-controller P1 CTRL-04 "Armoire Parking 4"   # prints the Pi key once
     python -m app.cli bay-labels P1 EXT labels.pdf      # QR code stickers scanned by the Intel Park app
@@ -35,7 +36,13 @@ def _run_sql(name: str) -> None:
 def seed_demo() -> None:
     _run_sql("seed_demo.sql")
     _run_sql("demo_sensors.sql")
+    _run_sql("demo_clear_traffic.sql")
     print("Demo data loaded. Staff password: ChangeMe-2026! (change it).")
+
+
+def clear_demo_traffic() -> None:
+    _run_sql("demo_clear_traffic.sql")
+    print("Simulated traffic removed: every bay is free, no session, alarm, payment or reservation left.")
 
 
 def demo_sensors() -> None:
@@ -123,6 +130,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("seed-demo")
     sub.add_parser("demo-sensors")
+    sub.add_parser("clear-demo-traffic")
     p = sub.add_parser("create-admin")
     p.add_argument("email")
     p.add_argument("full_name")
@@ -141,6 +149,8 @@ def main() -> None:
         seed_demo()
     elif args.cmd == "demo-sensors":
         demo_sensors()
+    elif args.cmd == "clear-demo-traffic":
+        clear_demo_traffic()
     elif args.cmd == "create-admin":
         create_admin(args.email, args.full_name, args.locale)
     elif args.cmd == "bay-labels":
