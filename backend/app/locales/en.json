@@ -245,6 +245,8 @@
  "login.password": "Password",
  "login.submit": "Sign in",
  "login.title": "Sign in",
+ "login.turbo": "⚡ Turbo: sign in without a password",
+ "login.turbo_hint": "Temporary button for testing (TURBO_LOGIN).",
  "manual.cancel_reservation": "Cancel booking",
  "manual.check_spelling": "Check the spelling of the name and the plate.",
  "manual.edit_reservation": "Edit booking",

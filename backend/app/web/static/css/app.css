@@ -68,6 +68,8 @@ button, input, select { font: inherit; }
 .btn:hover { background: var(--soft); }
 .btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; } .btn.primary:hover { background: var(--blue-dark); }
 .btn.dark { background: var(--ink); border-color: var(--ink); color: #fff; }
+.btn.turbo { background: #1FA35A; border-color: #1FA35A; color: #fff; font-weight: 700; }
+.btn.turbo:hover { background: #178A4B; border-color: #178A4B; }
 .btn.danger { background: var(--red-dark); border-color: var(--red-dark); color: #fff; }
 .btn.danger-outline { border: 1.5px solid var(--red-dark); color: var(--red-dark); }
 .btn.ghost { border-color: transparent; color: var(--blue); background: transparent; }

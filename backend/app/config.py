@@ -50,6 +50,10 @@ class Settings:
     # Never enable it on a public server.
     sms_debug: bool = field(default_factory=lambda: _bool("SMS_DEBUG", os.getenv("APP_ENV", "development") != "production"))
 
+    # TEST ONLY: green "Turbo" button on the login page that signs in as the first administrator
+    # without a password. Never enable it on a server reachable from outside the local network.
+    turbo_login: bool = field(default_factory=lambda: _bool("TURBO_LOGIN", False))
+
     @property
     def is_production(self) -> bool:
         return self.env == "production"

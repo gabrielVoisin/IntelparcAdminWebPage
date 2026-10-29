@@ -106,15 +106,10 @@ def page(handler):
 # --- Authentication and language --------------------------------------------------------
 @router.get("/login", response_class=HTMLResponse)
 def login_page(request: Request, next: str = "/") -> HTMLResponse:
-    return render(request, "login.html", None, next=next, error=None)
+    return render(request, "login.html", None, next=next, error=None, turbo=get_settings().turbo_login)
 
 
-@router.post("/login")
-def login_submit(request: Request, email: str = Form(...), password: str = Form(...), next: str = Form("/"),
-                 db: Session = Depends(get_db)) -> Response:
-    user = db.scalar(select(StaffUser).where(func.lower(StaffUser.email) == email.strip().lower()))
-    if user is None or not user.is_active or not verify_password(password, user.password_hash):
-        return render(request, "login.html", None, next=next, error="login.error")
+def _signed_in(user: StaffUser, next: str) -> Response:
     user.last_login_at = datetime.now(UTC)
     token, expires = create_access_token(user.id, user.role, user.locale)
     target = next if next.startswith("/") and not next.startswith("//") else "/"
@@ -122,6 +117,27 @@ def login_submit(request: Request, email: str = Form(...), password: str = Form(
     response.set_cookie(ACCESS_COOKIE, token, max_age=expires, httponly=True, samesite="strict",
                         secure=get_settings().cookie_secure)
     return response
+
+
+@router.post("/login")
+def login_submit(request: Request, email: str = Form(...), password: str = Form(...), next: str = Form("/"),
+                 db: Session = Depends(get_db)) -> Response:
+    user = db.scalar(select(StaffUser).where(func.lower(StaffUser.email) == email.strip().lower()))
+    if user is None or not user.is_active or not verify_password(password, user.password_hash):
+        return render(request, "login.html", None, next=next, error="login.error", turbo=get_settings().turbo_login)
+    return _signed_in(user, next)
+
+
+@router.post("/login/turbo")
+def login_turbo(next: str = Form("/"), db: Session = Depends(get_db)) -> Response:
+    """TEST ONLY (TURBO_LOGIN=true): sign in as the first active administrator, without a password."""
+    if not get_settings().turbo_login:
+        return Response(status_code=404)
+    user = db.scalar(select(StaffUser).where(StaffUser.role == "admin", StaffUser.is_active)
+                     .order_by(StaffUser.created_at).limit(1))
+    if user is None:
+        return RedirectResponse("/login", status_code=303)
+    return _signed_in(user, next)
 
 
 @router.get("/logout")

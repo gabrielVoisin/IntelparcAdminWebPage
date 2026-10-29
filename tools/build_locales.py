@@ -36,6 +36,8 @@ T: dict[str, tuple[str, str, str]] = {
     "login.email": ("Adresse e-mail", "Email address", "E-Mail-Adresse"),
     "login.password": ("Mot de passe", "Password", "Passwort"),
     "login.submit": ("Se connecter", "Sign in", "Anmelden"),
+    "login.turbo": ("⚡ Turbo : entrer sans mot de passe", "⚡ Turbo: sign in without a password", "⚡ Turbo: ohne Passwort anmelden"),
+    "login.turbo_hint": ("Bouton temporaire pour la phase de test (TURBO_LOGIN).", "Temporary button for testing (TURBO_LOGIN).", "Vorübergehende Schaltfläche für die Testphase (TURBO_LOGIN)."),
     "login.error": ("E-mail ou mot de passe incorrect.", "Incorrect email or password.", "E-Mail oder Passwort falsch."),
     # roles
     "role.admin": ("Administrateur", "Administrator", "Administrator"),

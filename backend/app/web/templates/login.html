@@ -19,6 +19,10 @@
     <label class="field">{{ t('login.password') }}<input class="input" type="password" name="password" autocomplete="current-password" required></label>
     <input type="hidden" name="next" value="{{ next }}">
     <button class="btn primary" type="submit">{{ t('login.submit') }}</button>
+    {% if turbo %}
+    <button class="btn turbo" type="submit" formaction="/login/turbo" formnovalidate>{{ t('login.turbo') }}</button>
+    <p class="muted" style="margin:-6px 0 0;font-size:12px;text-align:center">{{ t('login.turbo_hint') }}</p>
+    {% endif %}
     <div class="langs" style="gap:8px">
       {% for code in locales %}<a href="/lang/{{ code }}" style="color:var(--ink);border-color:var(--line-2)" aria-current="{{ 'true' if code == locale else 'false' }}">{{ code|upper }}</a>{% endfor %}
     </div>

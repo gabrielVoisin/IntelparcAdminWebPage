@@ -245,6 +245,8 @@
  "login.password": "Passwort",
  "login.submit": "Anmelden",
  "login.title": "Anmeldung",
+ "login.turbo": "⚡ Turbo: ohne Passwort anmelden",
+ "login.turbo_hint": "Vorübergehende Schaltfläche für die Testphase (TURBO_LOGIN).",
  "manual.cancel_reservation": "Reservierung stornieren",
  "manual.check_spelling": "Schreibweise von Name und Kennzeichen prüfen.",
  "manual.edit_reservation": "Reservierung ändern",

@@ -5,6 +5,7 @@ services:
     environment:
       COOKIE_SECURE: "false"     # plain HTTP on the local network
       SMS_DEBUG: "true"          # no SMS gateway: the code is shown in the app during sign-up
+      TURBO_LOGIN: "true"        # TEST ONLY: green "Turbo" button on the login page (no password). Remove after testing.
   caddy:
     environment:
       DOMAIN: ":80"

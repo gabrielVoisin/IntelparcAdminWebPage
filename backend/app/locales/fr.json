@@ -245,6 +245,8 @@
  "login.password": "Mot de passe",
  "login.submit": "Se connecter",
  "login.title": "Connexion",
+ "login.turbo": "⚡ Turbo : entrer sans mot de passe",
+ "login.turbo_hint": "Bouton temporaire pour la phase de test (TURBO_LOGIN).",
  "manual.cancel_reservation": "Annuler la réservation",
  "manual.check_spelling": "Vérifiez l’orthographe du nom et la plaque.",
  "manual.edit_reservation": "Modifier la réservation",
