@@ -17,6 +17,7 @@ from pathlib import Path
 
 import jwt
 from fastapi import APIRouter, Depends, Form, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
@@ -28,7 +29,7 @@ from app.deps import ACCESS_COOKIE, PERMISSIONS, allowed_site_ids
 from app.i18n import LOCALE_COOKIE, Translator, negotiate_locale
 from app.models import Controller, Customer, Device, NotificationRule, Site, StaffUser, Zone
 from app.security import create_access_token, decode_access_token, verify_password
-from app.services import queries, reports
+from app.services import queries, reports, watchdog
 from app.web import formatting as f
 
 templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
@@ -366,10 +367,28 @@ def devices(request: Request, db: Session, user: StaffUser) -> HTMLResponse:
         elif flt == "unack":
             events = [e for e in events if e["state"] == "active_unacknowledged"]
         c["shown"] = events
+        c["watchdog"] = watchdog.status(c["id"])
     return render(
         request, "devices.html", user, "devices", controllers=items, flt=flt,
         totals={"alarms": sum(c["active_alarms"] for c in items), "warnings": sum(c["active_warnings"] for c in items)},
     )
+
+
+@router.get("/live/state.json")
+def live_state(request: Request, scope: str = "bays", db: Session = Depends(get_db)) -> Response:
+    """Polled by every page every 2 s (0.5 Hz): the data fingerprint (the page reloads when it changes)
+    and the communication watchdog of each cabinet."""
+    try:
+        user = current_user(request, db)
+    except LoginRequired:
+        return JSONResponse({"detail": "login_required"}, status_code=401)
+    allowed = allowed_site_ids(user)
+    cabinets = db.scalars(select(Controller).order_by(Controller.code)).all()
+    return JSONResponse(jsonable_encoder({
+        "version": queries.live_version(db, scope),
+        "period_s": watchdog.PERIOD_S,
+        "cabinets": {str(c.id): watchdog.status(c.id) for c in cabinets if allowed is None or c.site_id in allowed},
+    }), headers={"Cache-Control": "no-store"})
 
 
 # --- Live view of a presence sensor (camera plate reader) ------------------------------------

@@ -495,6 +495,11 @@ class HeartbeatIn(BaseModel):
     devices: list[dict] = Field(default_factory=list, description="[{code, status: ok|fault|offline}]")
 
 
+class WatchdogIn(BaseModel):
+    source: Literal["agent", "simulator"] = Field(description="Program of the cabinet sending the signal")
+    seq: int = Field(0, ge=0, description="Signal counter of the sender (shows lost signals)")
+
+
 class ReadingIn(BaseModel):
     uid: str = Field(min_length=1, max_length=80, description="Unique id generated on the Pi (idempotency)")
     device_code: str

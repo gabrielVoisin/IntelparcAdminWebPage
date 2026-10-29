@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ t('nav.devices') }}{% endblock %}
 {% block live %}device_event,controller.{% endblock %}
+{% block live_scope %}devices{% endblock %}
 {% block content %}
 <header class="page-head">
   <div><div class="eyebrow">{{ t('devices.subtitle') }} · {{ fdt(now) }}</div><h1>{{ t('nav.devices') }}</h1></div>
@@ -29,6 +30,13 @@
       {% endif %}
     </div>
   </div>
+  {% if c.configured %}
+  <div class="watchdog" data-watchdog="{{ c.id }}" aria-live="polite">
+    <strong>{{ t('watchdog.title') }}</strong>
+    <span class="muted">{{ t('watchdog.rate') }}</span>
+    <span class="wd-list" data-wd-list>{% for w in c.watchdog %}<span class="wd {{ 'ok' if w.ok else 'lost' }}"><span class="lamp {{ 'ok' if w.ok else 'alarm' }}" aria-hidden="true"></span>{{ t('watchdog.source_' ~ w.source) }}</span>{% else %}<span class="muted">{{ t('watchdog.none') }}</span>{% endfor %}</span>
+  </div>
+  {% endif %}
   <div class="sensors">
     <div class="sensors-head">
       <h3>{{ t('devices.sensors_title') }}</h3>
@@ -107,4 +115,6 @@
   {% endif %}
 </section>
 {% endfor %}
+<script type="application/json" data-wd-i18n>{{ {"agent": t('watchdog.source_agent'), "simulator": t('watchdog.source_simulator'),
+  "ok": t('watchdog.ok'), "lost": t('watchdog.lost'), "none": t('watchdog.none')}|tojson }}</script>
 {% endblock %}

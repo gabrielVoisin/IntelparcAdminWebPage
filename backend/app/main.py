@@ -41,12 +41,33 @@ async def _alarm_loop(interval: int) -> None:
         await asyncio.sleep(interval)
 
 
+async def _watchdog_loop() -> None:
+    """Communication watchdog of the cabinets (0.5 Hz): alarm when a cabinet stops signalling."""
+    from app.db import SessionLocal
+    from app.services import watchdog
+
+    def run_once() -> int:
+        with SessionLocal() as db:
+            raised = watchdog.scan(db)
+            db.commit()
+            return raised
+
+    while True:
+        try:
+            if await asyncio.to_thread(run_once):
+                log.warning("watchdog: communication with a cabinet lost")
+        except Exception:  # keep the loop alive, the error is logged
+            log.exception("watchdog failed")
+        await asyncio.sleep(watchdog.PERIOD_S)
+
+
 @contextlib.asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     broadcaster.bind_loop(asyncio.get_running_loop())
-    task = asyncio.create_task(_alarm_loop(get_settings().alarm_scan_interval_s))
+    tasks = [asyncio.create_task(_alarm_loop(get_settings().alarm_scan_interval_s)), asyncio.create_task(_watchdog_loop())]
     yield
-    task.cancel()
+    for task in tasks:
+        task.cancel()
 
 
 def create_app() -> FastAPI:

@@ -22,7 +22,7 @@
 </script>
 <script src="/static/js/app.js?v={{ asset_v }}" defer></script>
 </head>
-<body data-live="{% block live %}{% endblock %}">
+<body data-live="{% block live %}{% endblock %}" data-live-scope="{% block live_scope %}bays{% endblock %}">
 <div class="shell">
   <nav class="sidebar" aria-label="{{ t('nav.main') }}">
     <div class="brand">

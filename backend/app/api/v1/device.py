@@ -27,8 +27,9 @@ from app.schemas import (
     IngestResult,
     PassagesIn,
     ReadingsIn,
+    WatchdogIn,
 )
-from app.services import ble_identity, identification, ingest, settings_store
+from app.services import ble_identity, identification, ingest, settings_store, watchdog
 
 router = APIRouter(prefix="/device", tags=["raspberry pi"])
 
@@ -70,6 +71,14 @@ def config(simulated: bool = False, controller: Controller = Depends(get_current
 def heartbeat(body: HeartbeatIn, controller: Controller = Depends(get_current_controller), db: Session = Depends(get_db)) -> dict:
     ingest.apply_heartbeat(db, controller, body)
     return {"ok": True, "server_time": datetime.now(UTC)}
+
+
+@router.post("/watchdog")
+def watchdog_signal(body: WatchdogIn, controller: Controller = Depends(get_current_controller),
+                    db: Session = Depends(get_db)) -> dict:
+    """Communication watchdog, every 2 s (0.5 Hz). 3 missing signals raise device.cabinet_communication_lost."""
+    watchdog.beat(db, controller, body.source, body.seq)
+    return {"ok": True, "period_s": watchdog.PERIOD_S, "server_time": datetime.now(UTC)}
 
 
 @router.post("/readings", response_model=IngestResult)

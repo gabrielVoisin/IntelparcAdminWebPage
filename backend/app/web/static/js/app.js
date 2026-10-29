@@ -180,6 +180,47 @@
   const pending = sessionStorage.getItem("pk_toast");
   if (pending) { sessionStorage.removeItem("pk_toast"); toast(pending, false); }
 
+  // Live refresh at 0.5 Hz: every 2 s the page asks the server for the fingerprint of its data and
+  // reloads when a cabinet published new values; it also shows the communication watchdog.
+  const WD_PERIOD_MS = 2000;
+  const scope = document.body.dataset.liveScope;
+  if (document.body.dataset.live) {
+    const wdText = document.querySelector("[data-wd-i18n]");
+    const W = wdText ? JSON.parse(wdText.textContent) : null;
+    const lang = document.documentElement.lang || undefined;
+    let baseline = null;
+    const busy = () => (document.activeElement && ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName))
+      || document.querySelector(".sensor-live:not([hidden])");
+    const showWatchdog = (cabinets) => {
+      document.querySelectorAll("[data-watchdog]").forEach((box) => {
+        const list = box.querySelector("[data-wd-list]");
+        const items = cabinets[box.dataset.watchdog] || [];
+        list.replaceChildren(...(items.length ? items.map((w) => {
+          const el = document.createElement("span");
+          el.className = "wd " + (w.ok ? "ok" : "lost");
+          const lamp = document.createElement("span");
+          lamp.className = "lamp " + (w.ok ? "ok" : "alarm");
+          lamp.setAttribute("aria-hidden", "true");
+          const detail = w.ok ? W.ok.replace("{age}", w.age_s.toLocaleString(lang)).replace("{seq}", w.seq)
+            : W.lost.replace("{time}", new Date(w.lost_since || w.last).toLocaleTimeString(lang));
+          el.append(lamp, `${W[w.source] || w.source} · ${detail}`);
+          return el;
+        }) : [Object.assign(document.createElement("span"), { className: "muted", textContent: W.none })]));
+      });
+    };
+    const tick = () => fetch(`/live/state.json?scope=${scope}`, { credentials: "same-origin", cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data) return;
+        if (W) showWatchdog(data.cabinets);
+        if (baseline === null) baseline = data.version;
+        else if (data.version !== baseline && !busy()) location.reload();
+      })
+      .catch(() => {});
+    tick();
+    setInterval(tick, WD_PERIOD_MS);
+  }
+
   // Live refresh: reload the page when something relevant changes (throttled).
   const live = document.body.dataset.live;
   if (live && "WebSocket" in window) {

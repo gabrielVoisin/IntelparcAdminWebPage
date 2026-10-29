@@ -189,6 +189,10 @@ button.sensor { width: 100%; cursor: pointer; }
 .sensor-live-video img { display: block; width: 100%; height: auto; }
 .sensor-live-video p { color: #B5B8BF; padding: 24px; text-align: center; }
 .sensor-live-video [hidden] { display: none; }
+.watchdog { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 12px 20px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.watchdog .wd-list { display: flex; flex-wrap: wrap; gap: 8px 20px; }
+.watchdog .wd { display: inline-flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
+.watchdog .wd.lost { color: var(--red-dark); font-weight: 600; }
 .sensor-live-values { margin: 0; padding: 14px 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; align-content: start; }
 .sensor-live-values .big { grid-column: 1 / -1; }
 .sensor-live-values dt { font-size: 12px; color: var(--muted); letter-spacing: .02em; }

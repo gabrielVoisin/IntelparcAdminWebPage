@@ -471,3 +471,23 @@ def period_bounds(period: str, today: date | None = None) -> tuple[date, date]:
     if period == "year":
         return today.replace(month=1, day=1), today
     raise ValueError(period)
+
+
+# --- Live refresh -----------------------------------------------------------------------------
+LIVE_PARTS = {
+    # bay map and dashboard: occupancy, plates, payment alarms
+    "bays": """
+      (SELECT string_agg(id::text || is_occupied::text || admin_state::text, ',' ORDER BY id) FROM bays),
+      (SELECT string_agg(id::text || coalesce(plate_display, ''), ',' ORDER BY id) FROM parking_sessions WHERE status = 'open'),
+      (SELECT string_agg(id::text || status::text, ',' ORDER BY id) FROM payment_alarms WHERE status <> 'fined')""",
+    # control devices: sensor states and cabinet alarms
+    "devices": """
+      (SELECT string_agg(id::text || status::text, ',' ORDER BY id) FROM devices WHERE address IS NOT NULL),
+      (SELECT string_agg(id::text || (cleared_at IS NULL)::text || (acknowledged_at IS NULL)::text, ',' ORDER BY id)
+         FROM device_events WHERE raised_at > now() - interval '2 days')""",
+}
+
+
+def live_version(db: Session, scope: str) -> str:
+    """Fingerprint of what a page shows live: it changes as soon as a cabinet publishes a new value."""
+    return db.execute(text(f"SELECT md5(concat_ws('|', {LIVE_PARTS.get(scope, LIVE_PARTS['bays'])}))")).scalar_one()
