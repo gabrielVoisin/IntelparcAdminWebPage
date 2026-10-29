@@ -3,6 +3,7 @@
     python -m app.cli seed-demo                         # load the demo data of the mockup
     python -m app.cli demo-sensors                      # reset the prototype sensor inventory (3 x 100)
     python -m app.cli clear-demo-traffic                # remove the simulated cars, sessions, alarms, payments
+    python -m app.cli simulated-sensors on|off          # sensors driven by the CarDetector simulator page
     python -m app.cli create-admin EMAIL "Full Name"    # asks for the password
     python -m app.cli new-controller P1 CTRL-04 "Armoire Parking 4"   # prints the Pi key once
     python -m app.cli bay-labels P1 EXT labels.pdf      # QR code stickers scanned by the Intel Park app
@@ -48,6 +49,15 @@ def clear_demo_traffic() -> None:
 def demo_sensors() -> None:
     _run_sql("demo_sensors.sql")
     print("Sensor inventory reset: 3 cabinets x 100 presence sensors, only CTRL-01 / CP-001 configured.")
+
+
+def simulated_sensors(state: str) -> None:
+    if state == "on":
+        _run_sql("demo_simulated_sensors.sql")
+        print("Simulated sensors on: CTRL-01 / CP-002..CP-056 watch P1 / EXT (every bay except 05).")
+    else:
+        _run_sql("demo_simulated_sensors_off.sql")
+        print("Simulated sensors off: their bays are free and the sensors are not configured any more.")
 
 
 def create_admin(email: str, full_name: str, locale: str) -> None:
@@ -131,6 +141,7 @@ def main() -> None:
     sub.add_parser("seed-demo")
     sub.add_parser("demo-sensors")
     sub.add_parser("clear-demo-traffic")
+    sub.add_parser("simulated-sensors").add_argument("state", choices=["on", "off"])
     p = sub.add_parser("create-admin")
     p.add_argument("email")
     p.add_argument("full_name")
@@ -151,6 +162,8 @@ def main() -> None:
         demo_sensors()
     elif args.cmd == "clear-demo-traffic":
         clear_demo_traffic()
+    elif args.cmd == "simulated-sensors":
+        simulated_sensors(args.state)
     elif args.cmd == "create-admin":
         create_admin(args.email, args.full_name, args.locale)
     elif args.cmd == "bay-labels":

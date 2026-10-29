@@ -34,13 +34,19 @@ router = APIRouter(prefix="/device", tags=["raspberry pi"])
 
 
 @router.get("/config", response_model=DeviceConfigOut)
-def config(controller: Controller = Depends(get_current_controller), db: Session = Depends(get_db)) -> DeviceConfigOut:
-    """Everything the Pi needs at start-up: its devices, the bay each sensor watches, intervals."""
+def config(simulated: bool = False, controller: Controller = Depends(get_current_controller),
+           db: Session = Depends(get_db)) -> DeviceConfigOut:
+    """Everything the Pi needs at start-up: its devices, the bay each sensor watches, intervals.
+
+    Sensors with a "sim:" address are driven by the test simulator: only ?simulated=true lists them.
+    """
+    simulated_only = Device.address.like("sim:%")
     rows = db.execute(
         select(Device, Bay.number, Zone.code)
         .outerjoin(Bay, Bay.id == Device.bay_id)
         .outerjoin(Zone, Zone.id == Bay.zone_id)
-        .where(Device.controller_id == controller.id, Device.address.is_not(None))  # not configured: no wiring yet
+        .where(Device.controller_id == controller.id, Device.address.is_not(None),  # not configured: no wiring yet
+               simulated_only if simulated else ~simulated_only)
         .order_by(Device.code)
     ).all()
     values = settings_store.get_all(db, controller.site_id)
