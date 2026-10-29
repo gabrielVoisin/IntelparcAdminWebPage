@@ -54,6 +54,9 @@ class Settings:
     # without a password. Never enable it on a server reachable from outside the local network.
     turbo_login: bool = field(default_factory=lambda: _bool("TURBO_LOGIN", False))
 
+    # Shared token sent to the presence sensors' live view service (header X-Sensor-Token).
+    sensor_token: str = field(default_factory=lambda: os.getenv("SENSOR_TOKEN", ""))
+
     @property
     def is_production(self) -> bool:
         return self.env == "production"

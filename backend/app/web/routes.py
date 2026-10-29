@@ -7,13 +7,17 @@ in one place.
 
 from __future__ import annotations
 
+import json
+import urllib.error
+import urllib.request
 import uuid
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
 import jwt
 from fastapi import APIRouter, Depends, Form, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -22,7 +26,7 @@ from app.config import get_settings
 from app.db import get_db
 from app.deps import ACCESS_COOKIE, PERMISSIONS, allowed_site_ids
 from app.i18n import LOCALE_COOKIE, Translator, negotiate_locale
-from app.models import Customer, NotificationRule, Site, StaffUser, Zone
+from app.models import Controller, Customer, Device, NotificationRule, Site, StaffUser, Zone
 from app.security import create_access_token, decode_access_token, verify_password
 from app.services import queries, reports
 from app.web import formatting as f
@@ -363,3 +367,62 @@ def devices(request: Request, db: Session, user: StaffUser) -> HTMLResponse:
         request, "devices.html", user, "devices", controllers=items, flt=flt,
         totals={"alarms": sum(c["active_alarms"] for c in items), "warnings": sum(c["active_warnings"] for c in items)},
     )
+
+
+# --- Live view of a presence sensor (camera plate reader) ------------------------------------
+def _live_device(request: Request, db: Session, device_id: uuid.UUID) -> Device | None:
+    """The sensor if the signed-in staff member may see it and it has a live view, else None."""
+    try:
+        user = current_user(request, db)
+    except LoginRequired:
+        return None
+    device = db.get(Device, device_id)
+    if device is None or not device.live_url:
+        return None
+    allowed = allowed_site_ids(user)
+    if allowed is not None and db.get(Controller, device.controller_id).site_id not in allowed:
+        return None
+    return device
+
+
+def _sensor_request(device: Device, path: str) -> urllib.request.Request:
+    req = urllib.request.Request(device.live_url.rstrip("/") + path)
+    if get_settings().sensor_token:
+        req.add_header("X-Sensor-Token", get_settings().sensor_token)
+    return req
+
+
+@router.get("/devices/{device_id}/live.json")
+def sensor_live_values(device_id: uuid.UUID, request: Request, db: Session = Depends(get_db)) -> Response:
+    """Current values of the sensor, relayed from its own service (the sensor is never exposed directly)."""
+    device = _live_device(request, db, device_id)
+    if device is None:
+        return JSONResponse({"detail": "not_found"}, status_code=404)
+    try:
+        with urllib.request.urlopen(_sensor_request(device, "/status.json"), timeout=3) as res:
+            data = json.loads(res.read())
+    except (urllib.error.URLError, TimeoutError, ValueError) as exc:
+        return JSONResponse({"online": False, "error": str(exc)[:200]})
+    return JSONResponse({"online": True, **data}, headers={"Cache-Control": "no-store"})
+
+
+@router.get("/devices/{device_id}/stream.mjpg")
+def sensor_live_stream(device_id: uuid.UUID, request: Request, db: Session = Depends(get_db)) -> Response:
+    """MJPEG live view of the sensor's camera, relayed chunk by chunk."""
+    device = _live_device(request, db, device_id)
+    if device is None:
+        return Response(status_code=404)
+    try:
+        upstream = urllib.request.urlopen(_sensor_request(device, "/stream.mjpg"), timeout=5)
+    except (urllib.error.URLError, TimeoutError):
+        return Response(status_code=502)
+
+    def relay() -> Iterator[bytes]:
+        try:
+            while chunk := upstream.read1(65536):
+                yield chunk
+        finally:
+            upstream.close()
+
+    return StreamingResponse(relay(), media_type=upstream.headers.get("Content-Type", "multipart/x-mixed-replace; boundary=FRAME"),
+                             headers={"Cache-Control": "no-store"})

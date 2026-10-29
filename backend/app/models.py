@@ -362,6 +362,7 @@ class Device(UUIDPk, Timestamps, Base):
     kind: Mapped[str] = mapped_column(DeviceKind)
     label: Mapped[str | None] = mapped_column(Text)
     address: Mapped[str | None] = mapped_column(Text)
+    live_url: Mapped[str | None] = mapped_column(Text)            # sensor's own HTTP service (live view)
     status: Mapped[str] = mapped_column(DeviceStatus, default="ok")
     last_seen_at: Mapped[datetime | None] = mapped_column(TS)
 

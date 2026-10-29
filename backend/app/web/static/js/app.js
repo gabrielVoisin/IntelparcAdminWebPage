@@ -118,6 +118,55 @@
     if (form) document.querySelectorAll("[data-dirty-target]").forEach((el) => { el.textContent = form.dataset.dirtyLabel; });
   });
 
+  // Presence sensor live view (control devices page): camera stream + current values, polled every second.
+  let liveTimer = null;
+  function closeLive(panel) {
+    clearInterval(liveTimer);
+    liveTimer = null;
+    const img = panel.querySelector("[data-live-img]");
+    img.removeAttribute("src");                                  // closes the MJPEG connection
+    panel.hidden = true;
+    document.querySelectorAll("[data-live-sensor][aria-expanded='true']").forEach((b) => b.setAttribute("aria-expanded", "false"));
+  }
+  function showValues(panel, data) {
+    const L = JSON.parse(panel.querySelector("[data-live-i18n]").textContent);
+    const set = (key, text, cls) => { const el = panel.querySelector(`[data-v="${key}"]`); el.textContent = text; el.className = cls || (key === "plate" ? "mono" : ""); };
+    const time = (iso) => iso ? new Date(iso).toLocaleTimeString(document.documentElement.lang || undefined) : "–";
+    panel.querySelector("[data-live-lamp]").className = "lamp " + (!data.online ? "alarm" : data.thermal_state === "normal" ? "ok" : "warning");
+    panel.querySelector("[data-live-offline]").hidden = !!data.online;
+    panel.querySelector("[data-live-img]").hidden = !data.online;
+    if (!data.online) { set("occupied", L.offline); return; }
+    set("occupied", data.occupied ? L.occupied : L.free, data.occupied ? "occupied" : "free");
+    set("plate", data.plate || L.none);
+    set("confidence", data.confidence == null ? "–" : Math.round(data.confidence * 100) + " %");
+    set("plate_since", time(data.plate_since));
+    set("analysed_fps", data.analysed_fps == null ? "–" : data.analysed_fps.toFixed(1) + " /s");
+    set("stream_fps", data.stream_fps == null ? "–" : data.stream_fps.toFixed(0) + " /s");
+    set("cpu_temp_c", data.cpu_temp_c == null ? "–" : data.cpu_temp_c.toFixed(1) + " °C");
+    set("thermal_state", L[data.thermal_state] || data.thermal_state || "–");
+    set("updated_at", time(data.updated_at));
+  }
+  document.addEventListener("click", (ev) => {
+    const close = ev.target.closest("[data-live-close]");
+    if (close) { closeLive(close.closest(".sensor-live")); return; }
+    const btn = ev.target.closest("[data-live-sensor]");
+    if (!btn) return;
+    const panel = document.getElementById(btn.getAttribute("aria-controls"));
+    const open = btn.getAttribute("aria-expanded") === "true";
+    document.querySelectorAll(".sensor-live:not([hidden])").forEach(closeLive);
+    if (open) return;
+    const id = btn.dataset.liveSensor;
+    btn.setAttribute("aria-expanded", "true");
+    panel.querySelector("[data-live-code]").textContent = btn.dataset.code;
+    panel.querySelector("[data-live-where]").textContent = btn.dataset.where;
+    panel.querySelector("[data-live-img]").src = `/devices/${id}/stream.mjpg?t=${Date.now()}`;
+    panel.hidden = false;
+    const poll = () => fetch(`/devices/${id}/live.json`, { credentials: "same-origin", cache: "no-store" })
+      .then((r) => r.json()).then((data) => showValues(panel, data)).catch(() => showValues(panel, { online: false }));
+    poll();
+    liveTimer = setInterval(poll, 1000);
+  });
+
   const pending = sessionStorage.getItem("pk_toast");
   if (pending) { sessionStorage.removeItem("pk_toast"); toast(pending, false); }
 
@@ -132,6 +181,7 @@
         const { event } = JSON.parse(msg.data);
         if (event === "ping" || !live.split(",").some((prefix) => event.startsWith(prefix))) return;
         if (document.activeElement && ["INPUT", "SELECT", "TEXTAREA"].includes(document.activeElement.tagName)) return;
+        if (document.querySelector(".sensor-live:not([hidden])")) return;   // keep a sensor's live view open
         clearTimeout(timer);
         timer = setTimeout(() => location.reload(), 1500);
       };

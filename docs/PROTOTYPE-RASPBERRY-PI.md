@@ -74,3 +74,15 @@ Les codes (`CPV-EXT-05`, `CPF-EXT-05`…) et la place surveillée par chacun son
 * `SMS_DEBUG=false` + fournisseur SMS (`_send_sms` dans `app/api/v1/app_driver.py`).
 * Prestataire de paiement réel (`_charge` dans le même fichier ; aujourd’hui `payments.provider = "demo"`).
 * Application : retirer le trafic HTTP en clair (`res/xml/network_security_config.xml`).
+
+## Capteur caméra CP-001 (lecteur de plaques)
+
+Sur le prototype, la place P1 / EXT / 05 est surveillée par la caméra du Raspberry Pi : le lecteur de plaques
+de [CarDetector](https://github.com/gabrielVoisin/CarDetector) (`plate_sensor/`) annonce la place occupée à
+l’agent dès qu’une plaque est confirmée. Sur la page **Appareils de contrôle**, un clic sur le capteur actif
+`001` de l’armoire 1 ouvre sa vue en direct : vidéo de la caméra et valeurs actuelles (plaque, confiance,
+images analysées, température, protection thermique).
+
+Le serveur relaie la vidéo et les valeurs depuis `devices.live_url` (`http://host.docker.internal:8081`) en
+envoyant le jeton `SENSOR_TOKEN`, lu dans `../CarDetector/plate_sensor/sensor.env` (voir
+`deploy/raspberry-pi/docker-compose.pi.yml`). Le lecteur n’est donc jamais exposé directement aux navigateurs.

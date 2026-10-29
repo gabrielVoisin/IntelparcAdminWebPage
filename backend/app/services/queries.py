@@ -379,7 +379,7 @@ def tariffs(db: Session, site_id: uuid.UUID | None = None) -> dict:
 def presence_sensors(db: Session, controller_id: uuid.UUID) -> list[dict]:
     """Presence sensors of one cabinet. A sensor without a wiring address is listed as "not configured"."""
     rows = db.execute(
-        text("""SELECT d.code, d.label, d.address, d.status, z.code AS zone_code, b.number AS bay_number
+        text("""SELECT d.id, d.code, d.label, d.address, d.live_url, d.status, z.code AS zone_code, b.number AS bay_number
                 FROM devices d LEFT JOIN bays b ON b.id = d.bay_id LEFT JOIN zones z ON z.id = b.zone_id
                 WHERE d.controller_id = :c AND d.kind IN ('front_presence_sensor', 'vertical_presence_sensor')
                 ORDER BY d.code"""),

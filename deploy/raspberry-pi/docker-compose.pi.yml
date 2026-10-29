@@ -6,6 +6,12 @@ services:
       COOKIE_SECURE: "false"     # plain HTTP on the local network
       SMS_DEBUG: "true"          # no SMS gateway: the code is shown in the app during sign-up
       TURBO_LOGIN: "true"        # TEST ONLY: green "Turbo" button on the login page (no password). Remove after testing.
+    # Live view of the camera presence sensor (CarDetector/plate_sensor, port 8081 on the Pi itself)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - path: ../CarDetector/plate_sensor/sensor.env   # SENSOR_TOKEN=... (relative to this project's folder)
+        required: false
   caddy:
     environment:
       DOMAIN: ":80"

@@ -38,12 +38,40 @@
     <div class="sensor-grid" role="list">
       {% for d in c.sensors %}
         {% set where = t('devices.sensor_bay', zone=d.zone_code, number=d.bay_number) if d.bay_number else '' %}
-        <div class="sensor {{ d.state }}" role="listitem" title="{{ d.code }} · {{ t('devices.sensor_' ~ d.state) }}{{ ' · ' ~ where if where }}{{ ' · ' ~ d.label if d.label }}">{{ d.code[3:] }}</div>
+        {% set tip = d.code ~ ' · ' ~ t('devices.sensor_' ~ d.state) ~ (' · ' ~ where if where else '') ~ (' · ' ~ d.label if d.label else '') %}
+        {% if d.live_url and d.state != 'not_configured' %}
+        <div role="listitem"><button type="button" class="sensor {{ d.state }} has-live" title="{{ tip }} · {{ t('live.open') }}" aria-expanded="false" aria-controls="live-{{ c.id }}"
+          data-live-sensor="{{ d.id }}" data-code="{{ d.code }}" data-where="{{ where }}{{ ' · ' ~ d.label if d.label }}">{{ d.code[3:] }}</button></div>
+        {% else %}
+        <div class="sensor {{ d.state }}" role="listitem" title="{{ tip }}">{{ d.code[3:] }}</div>
+        {% endif %}
       {% endfor %}
     </div>
     {% for d in c.sensors if d.state != 'not_configured' %}
       <p class="sensor-detail"><span class="mono" style="font-weight:600">{{ d.code }}</span> · {{ t('devices.sensor_' ~ d.state) }}{% if d.bay_number %} · {{ t('devices.sensor_bay', zone=d.zone_code, number=d.bay_number) }}{% endif %}{% if d.label %} · {{ d.label }}{% endif %}</p>
     {% endfor %}
+    <section class="sensor-live" id="live-{{ c.id }}" hidden aria-live="polite">
+      <div class="sensor-live-head">
+        <div><span class="lamp idle" data-live-lamp aria-hidden="true"></span> <strong class="mono" data-live-code></strong> <span class="muted" data-live-where></span></div>
+        <button type="button" class="btn small" data-live-close>{{ t('live.close') }}</button>
+      </div>
+      <div class="sensor-live-body">
+        <div class="sensor-live-video"><img alt="{{ t('live.video_alt') }}" data-live-img><p class="muted" data-live-offline hidden>{{ t('live.offline') }}</p></div>
+        <dl class="sensor-live-values">
+          <div class="big"><dt>{{ t('live.bay') }}</dt><dd data-v="occupied">–</dd></div>
+          <div class="big"><dt>{{ t('live.plate') }}</dt><dd class="mono" data-v="plate">–</dd></div>
+          <div><dt>{{ t('live.confidence') }}</dt><dd data-v="confidence">–</dd></div>
+          <div><dt>{{ t('live.since') }}</dt><dd data-v="plate_since">–</dd></div>
+          <div><dt>{{ t('live.analysed_fps') }}</dt><dd data-v="analysed_fps">–</dd></div>
+          <div><dt>{{ t('live.stream_fps') }}</dt><dd data-v="stream_fps">–</dd></div>
+          <div><dt>{{ t('live.cpu_temp') }}</dt><dd data-v="cpu_temp_c">–</dd></div>
+          <div><dt>{{ t('live.thermal') }}</dt><dd data-v="thermal_state">–</dd></div>
+          <div><dt>{{ t('live.updated') }}</dt><dd data-v="updated_at">–</dd></div>
+        </dl>
+      </div>
+      <script type="application/json" data-live-i18n>{{ {"occupied": t('live.occupied'), "free": t('live.free'), "none": t('live.no_plate'),
+        "normal": t('live.thermal_normal'), "hot": t('live.thermal_hot'), "paused": t('live.thermal_paused'), "offline": t('live.offline')}|tojson }}</script>
+    </section>
     <div class="sensor-legend">
       <span><i class="sensor active" aria-hidden="true">&nbsp;</i>{{ t('devices.sensor_active') }}</span>
       <span><i class="sensor fault" aria-hidden="true">&nbsp;</i>{{ t('devices.sensor_fault') }}</span>

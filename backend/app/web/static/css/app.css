@@ -177,6 +177,22 @@ table.data .actions { display: flex; gap: 6px; justify-content: flex-end; }
 .sensor-detail { margin: 12px 0 0; font-size: 13px; }
 .sensor.fault { background: var(--red-soft); border-color: var(--red); color: var(--red-dark); }
 .sensor.not_configured { border-style: dashed; }
+button.sensor { width: 100%; cursor: pointer; }
+.sensor.has-live:hover, .sensor.has-live[aria-expanded="true"] { outline: 3px solid var(--ink); outline-offset: 1px; }
+.sensor-live { margin-top: 14px; border: 1px solid var(--line-2); border-radius: 10px; overflow: hidden; }
+.sensor-live-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; background: var(--soft); }
+.sensor-live-head .lamp { width: 10px; height: 10px; box-shadow: none; vertical-align: middle; }
+.sensor-live-body { display: grid; grid-template-columns: minmax(0, 3fr) minmax(220px, 2fr); }
+@media (max-width: 900px) { .sensor-live-body { grid-template-columns: 1fr; } }
+.sensor-live-video { background: #0E1014; display: flex; align-items: center; justify-content: center; min-height: 240px; }
+.sensor-live-video img { display: block; width: 100%; height: auto; }
+.sensor-live-video p { color: #B5B8BF; padding: 24px; text-align: center; }
+.sensor-live-values { margin: 0; padding: 14px 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px 18px; align-content: start; }
+.sensor-live-values .big { grid-column: 1 / -1; }
+.sensor-live-values dt { font-size: 12px; color: var(--muted); letter-spacing: .02em; }
+.sensor-live-values dd { margin: 2px 0 0; font-size: 15px; font-weight: 600; }
+.sensor-live-values .big dd { font-size: 22px; }
+.sensor-live-values dd.occupied { color: var(--red-dark); } .sensor-live-values dd.free { color: #145C39; }
 .sensor-legend .sensor { width: 18px; padding: 4px 0; }
 table.events th { background: var(--soft); font-size: 12px; letter-spacing: .04em; }
 table.events td:first-child, table.events th:first-child { padding-left: 20px; }

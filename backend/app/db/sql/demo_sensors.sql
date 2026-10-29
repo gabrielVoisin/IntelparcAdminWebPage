@@ -15,6 +15,7 @@ WHERE c.code IN ('CTRL-01', 'CTRL-02', 'CTRL-03');
 
 UPDATE devices d
 SET address = 'gpio:1', label = 'Raspberry Pi 5 · caméra', status = 'ok', last_seen_at = now(),
+    live_url = 'http://host.docker.internal:8081',     -- plate reader of CarDetector (plate_sensor/)
     bay_id = (SELECT b.id FROM bays b JOIN zones z ON z.id = b.zone_id JOIN sites s ON s.id = z.site_id
               WHERE s.code = 'P1' AND z.code = 'EXT' AND b.number = '05')
 FROM controllers c
