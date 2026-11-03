@@ -32,7 +32,7 @@ from app.models import (
     SubscriptionPlan,
     Vehicle,
 )
-from app.schemas import Money, RefreshIn, VehicleOut
+from app.schemas import Money, RefreshIn, TurboIn, VehicleOut
 from app.schemas_app import (
     AppBayOut,
     AppLoginIn,
@@ -137,6 +137,33 @@ def login(body: AppLoginIn, db: Session = Depends(get_db)) -> DriverTokenOut:
     if customer is None or customer.anonymised_at is not None or not verify_password(body.password, customer.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid_credentials")
     customer.last_login_at = _now()
+    return _issue(db, customer, body.client_name)
+
+
+TURBO_EMAIL = "turbo@intelpark.test"
+
+
+@router.post("/auth/turbo", response_model=DriverTokenOut)
+def login_turbo(body: TurboIn, db: Session = Depends(get_db)) -> DriverTokenOut:
+    """TEST ONLY (TURBO_LOGIN=true): sign in without a password as the test driver turbo@intelpark.test,
+    created on first use with a complete profile (plate TURBO1, address, verified phone)."""
+    if not get_settings().turbo_login:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="turbo_disabled")
+    customer = db.scalar(select(Customer).where(func.lower(Customer.email) == TURBO_EMAIL))
+    if customer is None:
+        reference = "C-" + str(db.execute(text("SELECT nextval('customer_reference_seq')")).scalar())
+        customer = Customer(
+            reference=reference, first_name="Turbo", last_name="Test", email=TURBO_EMAIL, locale="fr",
+            password_hash=hash_password(uuid.uuid4().hex), address_line="Rue du Test 1", postcode="74100",
+            city="Annemasse", phone="+41790000000", phone_verified_at=_now(),
+        )
+        db.add(customer)
+        db.flush()
+        if db.scalar(select(Vehicle.id).where(Vehicle.plate_norm == "TURBO1")) is None:
+            db.add(Vehicle(customer_id=customer.id, plate_display="TURBO1", country="CH"))
+            db.flush()
+    customer.last_login_at = _now()
+    _audit(db, "app.login_turbo", "customers", customer.id, customer)
     return _issue(db, customer, body.client_name)
 
 

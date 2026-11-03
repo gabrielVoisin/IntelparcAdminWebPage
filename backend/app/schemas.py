@@ -46,6 +46,15 @@ class RefreshIn(BaseModel):
     refresh_token: str
 
 
+class TurboIn(BaseModel):
+    """TEST ONLY (TURBO_LOGIN=true): password-free sign-in from the Android app."""
+    client_name: str | None = None
+
+
+class TurboStatusOut(BaseModel):
+    enabled: bool
+
+
 class StaffOut(ORM):
     id: uuid.UUID
     email: str
