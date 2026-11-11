@@ -15,7 +15,9 @@ Toutes les dates sont en UTC (ISO 8601), les montants en centimes, les erreurs a
 | GET | `/sites` · `/dashboard` | view_dashboard | Parkings, indicateurs clés |
 | PATCH | `/sites/{id}` | change_settings | Activer / désactiver un parking |
 | GET | `/sites/{id}/zones` · `/zones/{id}/bays` · `/bays/{id}` | view_dashboard | Plan des places, détail d’une place |
-| PATCH | `/bays/{id}` | rôle manager ou plus | Bloquer / débloquer une place |
+| PATCH | `/bays/{id}` | rôle manager ou plus | Bloquer / débloquer une place ; statut de location (`rental_status` : not_rented, rented_sublet, rented_exclusive) |
+| GET · POST | `/bay-qr-codes` | lecture : view_dashboard · POST : rôle manager ou plus | Onglet « Générer QR code » : numéro, rue et adresse, GPS (la place est créée si elle n’existe pas) |
+| GET | `/bays/{id}/qr.pdf` · `/bays/{id}/qr.svg` | view_dashboard | Autocollant à imprimer (QR code de 5 × 5 cm) · aperçu |
 | GET | `/payment-alarms` | view_dashboard | Alarmes de paiement (`status=open|acknowledged|fined|all`) |
 | POST | `/payment-alarms/{id}/acknowledge` | acknowledge_alarm | Acquitter |
 | POST | `/payment-alarms/{id}/fine` | issue_fine | Envoyer une amende |
@@ -64,10 +66,10 @@ Jeton de type « customer » : refusé par les routes de l’équipe, et inverse
 | POST | `/app/me/phone` · `/app/me/phone/verify` | Étape 4 : code SMS à 6 chiffres (10 min, 5 essais) |
 | GET | `/app/home` | Accueil : profil, stationnement en cours, prochaine réservation, abonnements |
 | GET | `/app/sites?lat=&lng=` · `/app/nearest?lat=&lng=` | Parkings avec places libres et prix ; plus proche avec une place libre |
-| GET | `/app/bays/by-code?code=intelpark:bay:P1/EXT/05` · `/app/bays/{id}` | Place du QR code, tarifs |
-| POST | `/app/quote` | Prix d’une durée |
+| GET | `/app/bays/by-code?code=…` · `/app/bays/{id}` | Place du QR code (`intelpark:bay:P1/EXT/05?ref=IPK-…&street=…&gps=lat,lng`, la référence est cherchée en premier ; l’ancien format `intelpark:bay:P1/EXT/05` reste valable), adresse, GPS, tarifs, `rental_status` et `bookable` |
+| POST | `/app/quote` | Prix d’une durée (maintenant, ou à partir de `starts_at` pour une réservation) |
 | POST | `/app/sessions` · `/app/sessions/{id}/extend` | Payer une place (rejoint la session ouverte par le capteur), prolonger |
-| GET · POST | `/app/reservations` · POST `/app/reservations/{id}/cancel` | Réserver (place choisie par le serveur si absente), annuler (gratuit jusqu’à 1 h avant) |
+| GET · POST | `/app/reservations` · POST `/app/reservations/{id}/cancel` | Réserver (place choisie par le serveur si absente, ou la place scannée), annuler (gratuit jusqu’à 1 h avant). Une place `rented_exclusive` est refusée (409 `bay_rented`), comme pour `/app/sessions` |
 | GET | `/app/subscription-plans` | Formules |
 | GET · POST | `/app/subscriptions` | Abonnements du conducteur, souscrire |
 | POST | `/app/ble/token` | Jeton d’identité Bluetooth (voir [BLUETOOTH.md](BLUETOOTH.md)) |

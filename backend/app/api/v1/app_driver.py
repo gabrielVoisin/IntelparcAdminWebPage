@@ -68,7 +68,7 @@ from app.security import (
     sha256_hex,
     verify_password,
 )
-from app.services import ble_identity, identification, settings_store
+from app.services import bay_qr, ble_identity, identification, settings_store
 from app.services.audit import audit
 from app.services.pricing import price_for_stay
 
@@ -339,8 +339,10 @@ def sites(lat: float | None = Query(None, ge=-90, le=90), lng: float | None = Qu
 SQL_BAY = """
 SELECT v.bay_id AS id, s.code || '/' || z.code || '/' || v.number AS code, s.id AS site_id, s.code AS site_code,
        s.name AS site_name, z.code AS zone_code, z.name AS zone_name, v.number, v.kind::text AS kind, v.status,
-       s.latitude::float AS latitude, s.longitude::float AS longitude
-FROM v_bay_status v JOIN zones z ON z.id = v.zone_id JOIN sites s ON s.id = z.site_id
+       coalesce(b.latitude, s.latitude)::float AS latitude, coalesce(b.longitude, s.longitude)::float AS longitude,
+       b.reference, b.rental_status::text AS rental_status,
+       coalesce(b.street, nullif(concat_ws(', ', s.address_line, nullif(concat_ws(' ', s.postcode, s.city), '')), '')) AS street
+FROM v_bay_status v JOIN zones z ON z.id = v.zone_id JOIN sites s ON s.id = z.site_id JOIN bays b ON b.id = v.bay_id
 WHERE {where}
 """
 
@@ -353,7 +355,8 @@ def _bay_out(db: Session, where: str, params: dict) -> AppBayOut | None:
     hourly = _tariff(db, row.site_id, "hourly") or Money(amount_cents=0)
     daily = _tariff(db, row.site_id, "daily") or Money(amount_cents=hourly.amount_cents * 24, currency=hourly.currency)
     return AppBayOut(
-        **row._mapping, hourly=hourly, daily=daily, billing_mode=str(values["payments.billing_mode"]),
+        **row._mapping, bookable=row.status != "blocked" and row.rental_status != "rented_exclusive",
+        hourly=hourly, daily=daily, billing_mode=str(values["payments.billing_mode"]),
         free_minutes=int(values["payments.free_minutes"]), max_stay_min=int(values["payments.max_stay_min"]),
     )
 
@@ -366,11 +369,15 @@ def _bay_or_404(db: Session, bay_id: uuid.UUID) -> AppBayOut:
 
 
 @router.get("/bays/by-code", response_model=AppBayOut)
-def bay_by_code(code: str = Query(..., description="Content of the QR code: 'intelpark:bay:P1/EXT/05' or 'P1/EXT/05'"),
+def bay_by_code(code: str = Query(..., description="Content of the QR code ('intelpark:bay:P1/EXT/05?ref=IPK-...&street=...&gps=...', "
+                                                 "see app/services/bay_qr.py) or what the driver typed: 'P1/EXT/05'"),
                 customer: Customer = Depends(get_current_customer), db: Session = Depends(get_db)) -> AppBayOut:
-    raw = code.strip()
-    if raw.lower().startswith("intelpark:bay:"):
-        raw = raw[len("intelpark:bay:"):]
+    scanned = bay_qr.parse(code)
+    if scanned.reference:  # the reference links the sticker to the bay in the database
+        bay = _bay_out(db, "b.reference = :r", {"r": scanned.reference})
+        if bay is not None:
+            return bay
+    raw = scanned.code or ""
     try:  # a QR code may also carry the bay id
         return _bay_or_404(db, uuid.UUID(raw))
     except ValueError:
@@ -399,7 +406,7 @@ def nearest(lat: float = Query(..., ge=-90, le=90), lng: float = Query(..., ge=-
     if not candidates:
         raise HTTPException(404, "no_free_bay")
     site = candidates[0]
-    bay = _bay_out(db, """v.site_id = :s AND v.status = 'free' AND v.kind <> 'accessible'
+    bay = _bay_out(db, """v.site_id = :s AND v.status = 'free' AND v.kind <> 'accessible' AND b.rental_status <> 'rented_exclusive'
                           ORDER BY z.level DESC, z.sort_order, v.number LIMIT 1""", {"s": site.id})
     return NearestOut(site=site, bay=bay)
 
@@ -412,7 +419,7 @@ def _price(db: Session, bay: AppBayOut, start: datetime, end: datetime) -> int:
 def quote(body: QuoteIn, customer: Customer = Depends(get_current_customer), db: Session = Depends(get_db)) -> QuoteOut:
     """Price of a stay, before paying (the app shows it live while the driver changes the duration)."""
     bay = _bay_or_404(db, body.bay_id)
-    start = _now()
+    start = max(body.starts_at, _now()) if body.starts_at else _now()
     end = start + timedelta(minutes=body.minutes)
     return QuoteOut(bay_id=bay.id, minutes=body.minutes, starts_at=start, ends_at=end,
                     price=Money(amount_cents=_price(db, bay, start, end), currency=bay.hourly.currency))
@@ -461,6 +468,13 @@ def current_session(customer: Customer = Depends(get_current_customer), db: Sess
     return _session_out(db, session) if session else None
 
 
+def _check_bookable(bay: AppBayOut) -> None:
+    if bay.status == "blocked":
+        raise HTTPException(409, "bay_blocked")
+    if bay.rental_status == "rented_exclusive":  # rented outright: no short stay, no booking, no sub-letting
+        raise HTTPException(409, "bay_rented")
+
+
 def _check_max_stay(db: Session, bay: AppBayOut, paid_until: datetime) -> None:
     if bay.max_stay_min and paid_until - _now() > timedelta(minutes=bay.max_stay_min + 1):
         raise HTTPException(422, "max_stay_exceeded")
@@ -474,8 +488,7 @@ def start_session(body: SessionIn, customer: Customer = Depends(get_current_cust
     (the sensor confirms it a few seconds later). The driver is then identified on the bay ("app").
     """
     bay = _bay_or_404(db, body.bay_id)
-    if bay.status == "blocked":
-        raise HTTPException(409, "bay_blocked")
+    _check_bookable(bay)
     vehicle = _own_vehicle(db, customer, body.vehicle_id)
     now = _now()
     session = db.scalar(select(ParkingSession).where(ParkingSession.bay_id == bay.id, ParkingSession.status == "open").with_for_update())
@@ -543,7 +556,7 @@ def my_reservations(customer: Customer = Depends(get_current_customer), db: Sess
 
 SQL_FREE_BAY_FOR_PERIOD = """
 SELECT b.id FROM bays b JOIN zones z ON z.id = b.zone_id
-WHERE z.site_id = :s AND b.admin_state = 'open' AND b.kind <> 'accessible'
+WHERE z.site_id = :s AND b.admin_state = 'open' AND b.kind <> 'accessible' AND b.rental_status <> 'rented_exclusive'
   AND NOT EXISTS (SELECT 1 FROM reservations r WHERE r.bay_id = b.id AND r.status IN ('confirmed', 'active')
                   AND tstzrange(r.starts_at, r.ends_at) && tstzrange(:a, :e))
   AND NOT EXISTS (SELECT 1 FROM subscriptions su WHERE su.bay_id = b.id AND su.status = 'active'
@@ -568,8 +581,7 @@ def book(body: AppReservationIn, customer: Customer = Depends(get_current_custom
     bay = _bay_or_404(db, bay_id)
     if bay.site_id != body.site_id:
         raise HTTPException(422, "bay_not_in_site")
-    if bay.status == "blocked":
-        raise HTTPException(409, "bay_blocked")
+    _check_bookable(bay)
     vehicle = _own_vehicle(db, customer, body.vehicle_id)
     amount = _price(db, bay, body.starts_at, body.ends_at)
     res = Reservation(customer_id=customer.id, vehicle_id=vehicle.id if vehicle else None, bay_id=bay.id,

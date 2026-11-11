@@ -11,7 +11,7 @@
 {%- for code in ['invalid_credentials', 'permission_denied', 'insufficient_role', 'bay_already_booked', 'bay_blocked', 'alarm_not_open',
                  'daily_pass_cheaper_than_one_hour', 'plate_already_registered', 'email_already_used', 'cannot_demote_or_disable_yourself',
                  'csrf_header_missing', 'refresh_token_invalid', 'user_inactive', 'site_not_allowed', 'ends_before_start', 'invalid_period',
-                 'reservation_closed', 'subscription_terminated', 'bay_or_customer_not_found'] %}
+                 'reservation_closed', 'subscription_terminated', 'bay_or_customer_not_found', 'bay_rented', 'nothing_to_update', 'qr_not_generated'] %}
       {{ code }}: {{ t('error.' ~ code)|tojson }},
 {%- endfor %}
 {%- for code in ['alarm', 'bay', 'controller', 'customer', 'invitation', 'member', 'plan', 'reservation', 'site', 'subscription', 'vehicle', 'zone'] %}

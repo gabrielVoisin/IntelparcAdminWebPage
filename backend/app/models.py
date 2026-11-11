@@ -35,6 +35,7 @@ def pg_enum(name: str, *values: str) -> ENUM:
 StaffRole = pg_enum("staff_role", "admin", "manager", "agent", "viewer")
 BayKind = pg_enum("bay_kind", "standard", "accessible", "ev")
 BayAdminState = pg_enum("bay_admin_state", "open", "blocked")
+BayRentalStatus = pg_enum("bay_rental_status", "not_rented", "rented_sublet", "rented_exclusive")
 TariffKind = pg_enum("tariff_kind", "hourly", "daily", "monthly")
 ReservationStatus = pg_enum("reservation_status", "confirmed", "active", "completed", "cancelled", "no_show")
 BookingChannel = pg_enum("booking_channel", "web", "app", "phone", "desk")
@@ -117,6 +118,13 @@ class Bay(UUIDPk, Timestamps, Base):
     plan_col: Mapped[int | None] = mapped_column(SmallInteger)
     photo_x: Mapped[float | None] = mapped_column(Numeric(5, 2))
     photo_y: Mapped[float | None] = mapped_column(Numeric(5, 2))
+    # QR code and rental (schema v4)
+    rental_status: Mapped[str] = mapped_column(BayRentalStatus, default="not_rented")
+    reference: Mapped[str | None] = mapped_column(Text, unique=True)
+    street: Mapped[str | None] = mapped_column(Text)
+    latitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    longitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
+    qr_generated_at: Mapped[datetime | None] = mapped_column(TS)
 
     zone: Mapped[Zone] = relationship(back_populates="bays")
 

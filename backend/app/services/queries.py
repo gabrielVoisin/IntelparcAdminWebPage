@@ -78,8 +78,9 @@ def zones(db: Session, site_id: uuid.UUID) -> list[dict]:
 SQL_BAYS = """
 SELECT v.bay_id AS id, v.zone_id, v.number, v.kind, v.status, v.is_occupied, v.occupied_since,
        v.plan_row, v.plan_col, v.photo_x::float AS photo_x, v.photo_y::float AS photo_y,
-       ps.plate_display AS plate
+       ps.plate_display AS plate, b.rental_status::text AS rental_status
 FROM v_bay_status v
+JOIN bays b ON b.id = v.bay_id
 LEFT JOIN LATERAL (
   SELECT plate_display FROM parking_sessions p
   WHERE p.bay_id = v.bay_id AND p.status = 'open' ORDER BY p.entered_at DESC LIMIT 1
@@ -98,7 +99,8 @@ def bay_detail(db: Session, bay_id: uuid.UUID) -> dict | None:
         text("""
         SELECT v.bay_id AS id, v.zone_id, v.site_id, v.number, v.kind, v.status, v.is_occupied, v.occupied_since,
                v.plan_row, v.plan_col, v.photo_x::float AS photo_x, v.photo_y::float AS photo_y,
-               z.name AS zone_name, b.admin_state, b.blocked_reason
+               z.name AS zone_name, b.admin_state, b.blocked_reason, b.rental_status::text AS rental_status,
+               b.reference, b.street, b.latitude::float AS latitude, b.longitude::float AS longitude
         FROM v_bay_status v JOIN zones z ON z.id = v.zone_id JOIN bays b ON b.id = v.bay_id
         WHERE v.bay_id = :b"""),
         {"b": bay_id},

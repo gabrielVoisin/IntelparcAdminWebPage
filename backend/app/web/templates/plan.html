@@ -62,7 +62,7 @@
           {% if loop.index0 >= 4 and loop.index0 % 2 == 0 %}<div class="divider" aria-hidden="true"></div>{% endif %}
           <div class="bay-row">
             {% for b in row %}
-              {% set sub = t('bay_tag.' ~ b.status) if b.status in ('alarm', 'reserved', 'blocked') else (t('bay_tag.' ~ b.kind) if b.kind != 'standard' else '') %}
+              {% set sub = t('bay_tag.' ~ b.status) if b.status in ('alarm', 'reserved', 'blocked') else (t('bay_tag.' ~ b.kind) if b.kind != 'standard' else (t('rental_tag.' ~ b.rental_status) if b.rental_status != 'not_rented' else '')) %}
               <a class="bay {{ b.status }} {% if not matches(b) %}dim{% endif %} {% if detail and detail.id == b.id %}selected{% endif %}"
                  href="{{ base }}&filter={{ flt }}&bay={{ b.id }}"
                  aria-label="{{ t('plan.bay') }} {{ b.number }}, {{ t('bay_status.' ~ b.status) }}{% if b.plate %}, {{ b.plate }}{% endif %}">
@@ -111,6 +111,20 @@
     {% endif %}
     {% if detail.status == 'free' %}<p style="margin:0;font-size:14px" class="muted">{{ t('plan.free_text') }}</p>{% endif %}
     {% if detail.status == 'blocked' %}<p style="margin:0;font-size:14px" class="muted">{{ t('plan.blocked_text', reason=detail.blocked_reason or '—') }}</p>{% endif %}
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <span class="muted" style="font-size:12px">{{ t('plan.rental') }}</span>
+      {% if can('manage_bookings_subscriptions') %}
+      <select class="input" style="min-height:40px" aria-label="{{ t('plan.rental') }}"
+              onchange="this.dataset.body=JSON.stringify({rental_status:this.value});this.dataset.api='PATCH /api/v1/bays/{{ detail.id }}';this.click()">
+        {% for r in ['not_rented', 'rented_sublet', 'rented_exclusive'] %}<option value="{{ r }}" {% if detail.rental_status == r %}selected{% endif %}>{{ t('rental.' ~ r) }}</option>{% endfor %}
+      </select>
+      {% else %}<b>{{ t('rental.' ~ detail.rental_status) }}</b>{% endif %}
+      <span class="muted" style="font-size:13px">{{ t('plan.rental_help') }}</span>
+      <span style="font-size:14px">{{ t('plan.qr') }} :
+        {% if detail.reference %}<a class="mono" href="/qr-codes?bay={{ detail.id }}">{{ detail.reference }}</a>
+        {% else %}<span class="muted">{{ t('plan.qr_none') }}</span>{% if can('manage_bookings_subscriptions') %} · <a href="/qr-codes?edit={{ detail.id }}">{{ t('qr.generate') }}</a>{% endif %}{% endif %}
+      </span>
+    </div>
     {% if can('manage_bookings_subscriptions') %}
     <div class="row">
       {% if detail.admin_state == 'open' %}
