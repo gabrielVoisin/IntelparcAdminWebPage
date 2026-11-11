@@ -136,3 +136,21 @@ def test_bluetooth_token_and_identification(client, driver):
     # idempotent: the Pi resends after a network failure
     again = client.post("/api/v1/device/identifications", headers=PI_KEY, json={"identifications": [ident]}).json()
     assert again["decisions"][0] == decision
+
+
+def test_turbo_login(client, monkeypatch):
+    """TEST ONLY button: 404 unless TURBO_LOGIN=true, then signs in the test driver and the first admin."""
+    from app.config import get_settings
+
+    assert client.post(f"{API}/auth/turbo", json={}).status_code == 404
+    monkeypatch.setenv("TURBO_LOGIN", "true")
+    get_settings.cache_clear()
+    assert client.get("/api/v1/auth/turbo").json() == {"enabled": True}
+    r = client.post(f"{API}/auth/turbo", json={"client_name": "pytest"})
+    assert r.status_code == 200, r.text
+    assert r.json()["driver"]["email"] == "turbo@intelpark.test" and r.json()["driver"]["profile_complete"]
+    assert client.post(f"{API}/auth/turbo", json={}).json()["driver"]["id"] == r.json()["driver"]["id"]
+    staff = client.post("/api/v1/auth/turbo", json={"client_name": "pytest"})
+    assert staff.status_code == 200 and staff.json()["user"]["role"] == "admin"
+    monkeypatch.delenv("TURBO_LOGIN")
+    get_settings.cache_clear()

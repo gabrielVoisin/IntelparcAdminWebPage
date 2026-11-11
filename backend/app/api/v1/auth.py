@@ -17,7 +17,7 @@ from app.config import get_settings
 from app.db import get_db
 from app.deps import ACCESS_COOKIE, get_current_user
 from app.models import PushDevice, RefreshToken, StaffUser
-from app.schemas import LoginIn, PushTokenIn, RefreshIn, StaffOut, TokenOut
+from app.schemas import LoginIn, PushTokenIn, RefreshIn, StaffOut, TokenOut, TurboIn, TurboStatusOut
 from app.security import create_access_token, new_refresh_token, sha256_hex, verify_password
 from app.services.audit import audit
 
@@ -42,6 +42,26 @@ def login(body: LoginIn, response: Response, db: Session = Depends(get_db)) -> T
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid_credentials")
     user.last_login_at = datetime.now(UTC)
     audit(db, "auth.login", "staff_users", user.id, actor_id=user.id, data={"client": body.client_name})
+    return _issue(db, user, body.client_name, response)
+
+
+@router.get("/turbo", response_model=TurboStatusOut)
+def turbo_status() -> TurboStatusOut:
+    """TEST ONLY: tells the Android app whether to show its green "Turbo" button (TURBO_LOGIN)."""
+    return TurboStatusOut(enabled=get_settings().turbo_login)
+
+
+@router.post("/turbo", response_model=TokenOut)
+def login_turbo(body: TurboIn, response: Response, db: Session = Depends(get_db)) -> TokenOut:
+    """TEST ONLY (TURBO_LOGIN=true): sign in as the first active administrator, without a password."""
+    if not get_settings().turbo_login:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="turbo_disabled")
+    user = db.scalar(select(StaffUser).where(StaffUser.role == "admin", StaffUser.is_active)
+                     .order_by(StaffUser.created_at).limit(1))
+    if user is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no_admin")
+    user.last_login_at = datetime.now(UTC)
+    audit(db, "auth.login_turbo", "staff_users", user.id, actor_id=user.id, data={"client": body.client_name})
     return _issue(db, user, body.client_name, response)
 
 
