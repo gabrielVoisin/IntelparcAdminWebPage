@@ -84,9 +84,17 @@ def update_bay(
     if bay is None:
         raise HTTPException(404, "bay_not_found")
     check_site_access(user, bay.zone.site_id)
-    bay.admin_state = body.admin_state
-    bay.blocked_reason = body.blocked_reason if body.admin_state == "blocked" else None
-    audit(db, f"bay.{body.admin_state}", "bays", bay.id, actor_id=user.id, data={"reason": body.blocked_reason})
+    if body.admin_state is None and body.rental_status is None:
+        raise HTTPException(422, "nothing_to_update")
+    if body.admin_state is not None:
+        bay.admin_state = body.admin_state
+        bay.blocked_reason = body.blocked_reason if body.admin_state == "blocked" else None
+        audit(db, f"bay.{body.admin_state}", "bays", bay.id, actor_id=user.id, data={"reason": body.blocked_reason})
+    if body.rental_status is not None and body.rental_status != bay.rental_status:
+        audit(db, "bay.rental_status", "bays", bay.id, actor_id=user.id,
+              data={"from": bay.rental_status, "to": body.rental_status})
+        bay.rental_status = body.rental_status
     db.flush()
-    broadcaster.publish("bay.updated", {"bay_id": bay.id, "zone_id": bay.zone_id, "admin_state": bay.admin_state})
+    broadcaster.publish("bay.updated", {"bay_id": bay.id, "zone_id": bay.zone_id, "admin_state": bay.admin_state,
+                                        "rental_status": bay.rental_status})
     return queries.bay_detail(db, bay_id)

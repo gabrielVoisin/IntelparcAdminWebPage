@@ -104,6 +104,9 @@ class ZoneOut(ORM):
     sort_order: int
 
 
+RentalStatus = Literal["not_rented", "rented_sublet", "rented_exclusive"]
+
+
 class BayOut(BaseModel):
     id: uuid.UUID
     zone_id: uuid.UUID
@@ -117,6 +120,7 @@ class BayOut(BaseModel):
     photo_x: float | None
     photo_y: float | None
     plate: str | None = None
+    rental_status: RentalStatus = "not_rented"
 
 
 class BayDetailOut(BayOut):
@@ -124,6 +128,10 @@ class BayDetailOut(BayOut):
     site_id: uuid.UUID
     admin_state: Literal["open", "blocked"]
     blocked_reason: str | None
+    reference: str | None = None
+    street: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
     session: dict | None = None
     alarm: dict | None = None
     reservation: dict | None = None
@@ -131,8 +139,37 @@ class BayDetailOut(BayOut):
 
 
 class BayUpdateIn(BaseModel):
-    admin_state: Literal["open", "blocked"]
+    admin_state: Literal["open", "blocked"] | None = None
     blocked_reason: str | None = None
+    rental_status: RentalStatus | None = Field(
+        None, description="not_rented: bookable; rented_sublet: rented, sub-letting allowed (bookable); "
+                          "rented_exclusive: rented outright (not bookable)")
+
+
+class BayQrIn(BaseModel):
+    """Admin tab "Generate QR code": the bay is created in the zone if its number does not exist yet."""
+    zone_id: uuid.UUID
+    number: str = Field(min_length=1, max_length=12)
+    street: str = Field(min_length=2, max_length=200, description="Street and number, postcode and town")
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    rental_status: RentalStatus | None = None
+
+
+class BayQrOut(BaseModel):
+    bay_id: uuid.UUID
+    code: str = Field(description="'<site>/<zone>/<number>', e.g. P1/EXT/05")
+    reference: str
+    number: str
+    site_name: str
+    zone_name: str
+    street: str | None
+    latitude: float | None
+    longitude: float | None
+    rental_status: RentalStatus
+    qr_content: str = Field(description="Text encoded in the QR code, read by the Intel Park app")
+    qr_generated_at: datetime | None
+    created: bool = False
 
 
 class DashboardOut(BaseModel):

@@ -10,6 +10,7 @@ Généré depuis la base PostgreSQL 16 (`backend/app/db/sql/0001_schema.sql`). C
 | `alarm_status` | open, acknowledged, fined |
 | `bay_admin_state` | open, blocked |
 | `bay_kind` | standard, accessible, ev |
+| `bay_rental_status` | not_rented, rented_sublet, rented_exclusive |
 | `billing_mode` | started_hour, quarter_hour, minute |
 | `booking_channel` | web, app, phone, desk |
 | `device_kind` | camera, front_presence_sensor, vertical_presence_sensor, barrier, pay_terminal, display |
@@ -110,6 +111,12 @@ Places de stationnement : numéro, type (standard, PMR, VE), état administratif
 | `plan_col` | smallint | non |  |
 | `photo_x` | numeric | non |  |
 | `photo_y` | numeric | non |  |
+| `rental_status` | bay_rental_status | oui | défaut `'not_rented'` · `rented_exclusive` = non réservable dans l’app (v4) |
+| `reference` | text | non | unique · référence du QR code, ex. `IPK-7F3K9Q` (v4) |
+| `street` | text | non | rue et adresse de la place (v4, sinon celle du parking) |
+| `latitude` | numeric | non | position GPS de la place (v4, sinon celle du parking) |
+| `longitude` | numeric | non | (v4) |
+| `qr_generated_at` | timestamp with time zone | non | dernier QR code généré (v4) |
 | `created_at` | timestamp with time zone | oui | défaut `now()` |
 | `updated_at` | timestamp with time zone | oui | défaut `now()` |
 

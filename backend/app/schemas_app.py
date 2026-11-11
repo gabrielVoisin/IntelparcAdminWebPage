@@ -132,8 +132,12 @@ class AppBayOut(BaseModel):
     billing_mode: str
     free_minutes: int
     max_stay_min: int = Field(description="0 = no limit")
-    latitude: float | None
+    latitude: float | None = Field(description="Position of the bay (QR code), else of the car park")
     longitude: float | None
+    reference: str | None = Field(None, description="Reference of the bay's QR code, e.g. IPK-7F3K9Q")
+    street: str | None = Field(None, description="Street and address of the bay (else of the car park)")
+    rental_status: Literal["not_rented", "rented_sublet", "rented_exclusive"] = "not_rented"
+    bookable: bool = Field(True, description="False when the bay is blocked or rented outright (rented_exclusive)")
 
 
 class NearestOut(BaseModel):
@@ -143,7 +147,8 @@ class NearestOut(BaseModel):
 
 class QuoteIn(BaseModel):
     bay_id: uuid.UUID
-    minutes: int = Field(gt=0, le=7 * 24 * 60)
+    minutes: int = Field(gt=0, le=31 * 24 * 60)
+    starts_at: datetime | None = Field(None, description="Empty: now (pay now). Set: booking that starts later")
 
 
 class QuoteOut(BaseModel):

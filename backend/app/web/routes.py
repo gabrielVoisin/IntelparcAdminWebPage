@@ -29,6 +29,7 @@ from app.deps import ACCESS_COOKIE, PERMISSIONS, allowed_site_ids
 from app.i18n import LOCALE_COOKIE, Translator, negotiate_locale
 from app.models import Controller, Customer, Device, NotificationRule, Site, StaffUser, Zone
 from app.security import create_access_token, decode_access_token, verify_password
+from app.api.v1.bay_qr import qr_rows
 from app.services import queries, reports, watchdog
 from app.web import formatting as f
 
@@ -40,6 +41,7 @@ router = APIRouter(include_in_schema=False)
 NAV = [
     ("dashboard", "/", "nav.dashboard"),
     ("plan", "/plan", "nav.plan"),
+    ("qr", "/qr-codes", "nav.qr"),
     ("reservations", "/reservations", "nav.reservations"),
     ("subscriptions", "/subscriptions", "nav.subscriptions"),
     ("customers", "/customers", "nav.customers"),
@@ -218,6 +220,33 @@ def plan(request: Request, db: Session, user: StaffUser) -> HTMLResponse:
         sites=sites, site=site, zones=zones, zone=zone, rows=[rows[k] for k in sorted(rows)], counts=counts,
         flt=flt, detail=detail, show_photo=bool(zone and zone["code"] == "EXT" and site and site["code"] == "P1"),
     )
+
+
+# --- 2b. Generate QR code ----------------------------------------------------------------------
+@router.get("/qr-codes", response_class=HTMLResponse)
+@page
+def qr_codes(request: Request, db: Session, user: StaffUser) -> HTMLResponse:
+    scope = allowed_site_ids(user)
+    sites = queries.sites(db, scope)
+    zones = [(s, queries.zones(db, s["id"])) for s in sites]
+    rows = qr_rows(db, scope)
+    selected = None
+    bay_param = request.query_params.get("bay")
+    if bay_param:
+        try:
+            found = qr_rows(db, scope, uuid.UUID(bay_param))
+        except ValueError:
+            found = []
+        selected = found[0] if found and found[0]["reference"] else None
+    edit = None
+    if request.query_params.get("edit"):
+        try:
+            edit = queries.bay_detail(db, uuid.UUID(request.query_params["edit"]))
+        except ValueError:
+            edit = None
+    show_form = bool(request.query_params.get("new") or edit or (not rows and not selected))
+    return render(request, "qr_codes.html", user, "qr", zones=zones, rows=rows, selected=selected, edit=edit,
+                  show_form=show_form)
 
 
 # --- 3. Reservations ----------------------------------------------------------------------

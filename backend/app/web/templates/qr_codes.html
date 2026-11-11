@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}{{ t('nav.qr') }}{% endblock %}
+{% block content %}
+{% set can_edit = user.role in ('admin', 'manager') %}
+<header class="page-head">
+  <div><div class="eyebrow">{{ t('qr.subtitle') }}</div><h1>{{ t('nav.qr') }}</h1></div>
+  {% if can_edit %}<a class="btn primary" href="/qr-codes?new=1">{{ t('qr.new') }}</a>{% endif %}
+</header>
+
+{% if show_form and can_edit %}
+{% set f_zone = edit.zone_id if edit else (zones[0][1][0].id if zones and zones[0][1] else '') %}
+<section class="card" aria-labelledby="qr-form-title">
+  <div><h2 id="qr-form-title">{{ t('qr.new') if not edit else t('qr.preview', number=edit.number) }}</h2>
+    <span class="muted" style="font-size:14px">{{ t('qr.form_help') }}</span></div>
+  <form class="form-grid" id="qr-form" style="align-items:end">
+    <label class="field">{{ t('qr.zone') }}
+      <select class="input" name="zone_id" required>
+        {% for site, site_zones in zones %}<optgroup label="{{ site.code }} · {{ site.name }}">
+          {% for z in site_zones %}<option value="{{ z.id }}" {% if z.id == f_zone %}selected{% endif %}>{{ site.code }}/{{ z.code }} · {{ z.name }}</option>{% endfor %}
+        </optgroup>{% endfor %}
+      </select></label>
+    <label class="field">{{ t('qr.number') }}<input class="input mono" name="number" required maxlength="12" placeholder="05" value="{{ edit.number if edit else '' }}"></label>
+    <label class="field full">{{ t('qr.street') }}<input class="input" name="street" required minlength="2" maxlength="200" placeholder="{{ t('qr.street_placeholder') }}" value="{{ edit.street or '' if edit else '' }}"></label>
+    <label class="field">{{ t('qr.latitude') }}<input class="input mono" name="latitude" type="number" step="0.000001" min="-90" max="90" required placeholder="46.204391" value="{{ edit.latitude if edit and edit.latitude is not none else '' }}"></label>
+    <label class="field">{{ t('qr.longitude') }}<input class="input mono" name="longitude" type="number" step="0.000001" min="-180" max="180" required placeholder="6.143158" value="{{ edit.longitude if edit and edit.longitude is not none else '' }}"></label>
+    <div><button class="btn" type="button" id="qr-locate">{{ t('qr.locate') }}</button></div>
+    <label class="field">{{ t('qr.rental') }}
+      <select class="input" name="rental_status">
+        {% for r in ['not_rented', 'rented_sublet', 'rented_exclusive'] %}<option value="{{ r }}" {% if edit and edit.rental_status == r %}selected{% endif %}>{{ t('rental.' ~ r) }}</option>{% endfor %}
+      </select></label>
+    <div class="full"><button class="btn primary" type="submit">{{ t('qr.generate') }}</button></div>
+  </form>
+</section>
+<script type="application/json" id="qr-i18n">{{ {'locate_failed': t('qr.locate_failed'), 'ok': t('qr.generated_ok')}|tojson }}</script>
+<script>
+(function () {
+  const form = document.getElementById("qr-form");
+  const L = JSON.parse(document.getElementById("qr-i18n").textContent);
+  const errors = (window.PK_I18N && window.PK_I18N.errors) || {};
+  document.getElementById("qr-locate").addEventListener("click", () => {
+    if (!navigator.geolocation) { alert(L.locate_failed); return; }
+    navigator.geolocation.getCurrentPosition((pos) => {
+      form.latitude.value = pos.coords.latitude.toFixed(6);
+      form.longitude.value = pos.coords.longitude.toFixed(6);
+    }, () => alert(L.locate_failed), { enableHighAccuracy: true, timeout: 10000 });
+  });
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const button = form.querySelector("[type=submit]");
+    button.disabled = true;
+    const body = {
+      zone_id: form.zone_id.value, number: form.number.value.trim(), street: form.street.value.trim(),
+      latitude: Number(form.latitude.value), longitude: Number(form.longitude.value), rental_status: form.rental_status.value,
+    };
+    try {
+      const res = await fetch("/api/v1/bay-qr-codes", {
+        method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json", "X-Requested-With": "fetch" }, body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(typeof data.detail === "string" ? (errors[data.detail] || data.detail) : JSON.stringify(data.detail));
+      sessionStorage.setItem("pk_toast", L.ok);
+      location.href = "/qr-codes?bay=" + data.bay_id;
+    } catch (err) {
+      alert(err.message);
+      button.disabled = false;
+    }
+  });
+})();
+</script>
+{% endif %}
+
+{% if selected %}
+<section class="card" aria-labelledby="qr-preview-title">
+  <div class="card-head">
+    <div><h2 id="qr-preview-title">{{ t('qr.preview', number=selected.number) }}</h2>
+      <span class="muted" style="font-size:14px">{{ selected.site_name }} · {{ selected.zone_name }}</span></div>
+    <span class="badge {{ 'red' if selected.rental_status == 'rented_exclusive' else ('dashed' if selected.rental_status == 'rented_sublet' else 'outline') }}">{{ t('rental.' ~ selected.rental_status) }}</span>
+  </div>
+  <div class="row" style="align-items:flex-start;gap:24px;flex-wrap:wrap">
+    <div style="background:#fff;padding:16px;border:1px solid #DADCE0;border-radius:12px">
+      <img src="/api/v1/bays/{{ selected.bay_id }}/qr.svg?v={{ selected.qr_generated_at.timestamp()|int if selected.qr_generated_at else 0 }}" width="220" height="220"
+           alt="{{ t('qr.preview_alt', code=selected.code) }}">
+    </div>
+    <div style="display:flex;flex-direction:column;gap:10px;min-width:260px;flex:1">
+      <div><span class="muted" style="font-size:12px">{{ t('qr.col_bay') }}</span><div class="mono" style="font-size:20px"><b>{{ selected.code }}</b></div></div>
+      <div><span class="muted" style="font-size:12px">{{ t('qr.col_address') }}</span><div>{{ selected.street or '—' }}</div></div>
+      <div><span class="muted" style="font-size:12px">{{ t('qr.col_gps') }}</span><div class="mono">{% if selected.latitude is not none %}{{ '%.6f'|format(selected.latitude) }}, {{ '%.6f'|format(selected.longitude) }}{% else %}—{% endif %}</div></div>
+      <div><span class="muted" style="font-size:12px">{{ t('qr.reference') }}</span><div class="mono"><b>{{ selected.reference }}</b></div></div>
+      <details><summary class="muted" style="font-size:13px;cursor:pointer">{{ t('qr.content') }}</summary><code style="word-break:break-all;font-size:12px">{{ selected.qr_content }}</code></details>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <a class="btn primary" href="/api/v1/bays/{{ selected.bay_id }}/qr.pdf" download>{{ t('qr.download') }}</a>
+        {% if selected.latitude is not none %}<a class="btn" target="_blank" rel="noopener" href="https://www.openstreetmap.org/?mlat={{ selected.latitude }}&mlon={{ selected.longitude }}#map=19/{{ selected.latitude }}/{{ selected.longitude }}">{{ t('qr.map') }}</a>{% endif %}
+        {% if can_edit %}<a class="btn ghost" href="/qr-codes?edit={{ selected.bay_id }}">{{ t('qr.edit') }}</a>{% endif %}
+      </div>
+      <span class="muted" style="font-size:13px">{{ t('qr.print_help') }}</span>
+    </div>
+  </div>
+</section>
+{% endif %}
+
+<section class="card" aria-labelledby="qr-list-title">
+  <div class="card-head"><h2 id="qr-list-title">{{ t('qr.list') }}</h2><span class="muted" style="font-size:14px">{{ rows|length }}</span></div>
+  {% if rows %}
+  <div class="table-wrap"><table class="data" style="min-width:860px">
+    <thead><tr><th>{{ t('qr.col_bay') }}</th><th>{{ t('qr.col_address') }}</th><th>{{ t('qr.col_gps') }}</th><th>{{ t('qr.col_rental') }}</th><th>{{ t('qr.col_generated') }}</th><th></th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr {% if selected and selected.bay_id == r.bay_id %}aria-current="true" style="background:var(--soft)"{% endif %}>
+        <td><a href="/qr-codes?bay={{ r.bay_id }}" class="mono"><b>{{ r.code }}</b></a><span class="sub-line mono">{{ r.reference }}</span></td>
+        <td>{{ r.street or '—' }}</td>
+        <td class="mono" style="font-size:13px">{% if r.latitude is not none %}{{ '%.6f'|format(r.latitude) }}<br>{{ '%.6f'|format(r.longitude) }}{% else %}—{% endif %}</td>
+        <td>{{ t('rental.' ~ r.rental_status) }}</td>
+        <td>{{ fdt(r.qr_generated_at) if r.qr_generated_at else '—' }}</td>
+        <td style="text-align:right;white-space:nowrap">
+          <a class="btn small" href="/qr-codes?bay={{ r.bay_id }}">{{ t('plan.qr') }}</a>
+          <a class="btn small" href="/api/v1/bays/{{ r.bay_id }}/qr.pdf" download>PDF</a>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="muted">{{ t('qr.none') }}</p>{% endif %}
+</section>
+{% endblock %}
