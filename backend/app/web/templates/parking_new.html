@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}{{ t('parkings.new') }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div><div class="eyebrow"><a href="/parkings" class="muted">{{ t('nav.my_parkings') }}</a></div><h1>{{ t('parkings.new') }}</h1></div>
+</header>
+
+<form class="card" data-api-form="POST /api/v1/parkings" data-flat data-success="{{ t('parkings.created') }}">
+  <div><h2>{{ t('parkings.identity') }}</h2><span class="muted" style="font-size:14px">{{ t('parkings.identity_help') }}</span></div>
+  <div class="form-grid">
+    {% if organizations %}
+    <label class="field full">{{ t('parkings.owner_account') }}
+      <select class="input" name="organization_id" data-skip-empty>
+        <option value="">{{ t('parkings.my_account') }}</option>
+        {% for o in organizations %}<option value="{{ o.id }}">{{ o.name }} · {{ t('org_kind.' ~ o.kind) }}</option>{% endfor %}
+      </select></label>
+    {% endif %}
+    <label class="field">{{ t('parkings.name') }}<input class="input" name="name" required minlength="2" maxlength="120" placeholder="{{ t('parkings.name_placeholder') }}"></label>
+    <label class="field">{{ t('parkings.capacity') }}<input class="input" name="capacity" type="number" min="1" max="2000" required value="20">
+      <span class="help">{{ t('parkings.capacity_help') }}</span></label>
+    <label class="field full">{{ t('parkings.address') }}<input class="input" name="address_line" maxlength="200" placeholder="{{ t('qr.street_placeholder') }}"></label>
+    <label class="field">{{ t('parkings.postcode') }}<input class="input" name="postcode" maxlength="20"></label>
+    <label class="field">{{ t('parkings.city') }}<input class="input" name="city" maxlength="120"></label>
+    <label class="field">{{ t('parkings.country') }}<input class="input mono" name="country" maxlength="2" minlength="2" value="CH" required></label>
+    <label class="field">{{ t('qr.latitude') }}<input class="input mono" name="latitude" type="number" step="0.000001" min="-90" max="90" placeholder="46.204391"></label>
+    <label class="field">{{ t('qr.longitude') }}<input class="input mono" name="longitude" type="number" step="0.000001" min="-180" max="180" placeholder="6.143158"></label>
+    <div><button class="btn" type="button" id="locate">{{ t('qr.locate') }}</button></div>
+  </div>
+
+  <div><h2>{{ t('parkings.mode') }}</h2><span class="muted" style="font-size:14px">{{ t('parkings.mode_help') }}</span></div>
+  <div class="mode-cards" role="radiogroup" aria-label="{{ t('parkings.mode') }}">
+    {% for m in ['qr_code', 'presence_sensor', 'smart_barrier'] %}
+    <label class="mode-card"><input type="radio" name="management_mode" value="{{ m }}" {% if m == mode %}checked{% endif %} required>
+      <span><b style="display:block">{{ t('mode.' ~ m) }}</b><span class="muted" style="font-size:13px">{{ t('mode.' ~ m ~ '.help') }}</span></span></label>
+    {% endfor %}
+  </div>
+  <div><button class="btn primary" type="submit">{{ t('parkings.create') }}</button></div>
+</form>
+<script>
+document.getElementById("locate").addEventListener("click", () => {
+  const form = document.querySelector("form[data-api-form]");
+  if (!navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition((pos) => {
+    form.latitude.value = pos.coords.latitude.toFixed(6);
+    form.longitude.value = pos.coords.longitude.toFixed(6);
+  }, () => {}, { enableHighAccuracy: true, timeout: 10000 });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}{{ t('nav.my_parkings') }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div><div class="eyebrow">{{ t('parkings.subtitle') }}</div><h1>{{ t('nav.my_parkings') }}</h1></div>
+  {% if can_create %}<a class="btn primary" href="/parkings/new">+ {{ t('parkings.new') }}</a>{% endif %}
+</header>
+
+{% if not parkings %}
+<section class="card">
+  <h2>{{ t('parkings.empty_title') }}</h2>
+  <p class="muted" style="margin:0">{{ t('parkings.empty_help') }}</p>
+  {% if can_create %}<div><a class="btn primary" href="/parkings/new">+ {{ t('parkings.new') }}</a></div>{% endif %}
+</section>
+{% else %}
+<section class="parking-grid" aria-label="{{ t('nav.my_parkings') }}">
+  {% for p in parkings %}
+  <article class="card parking-card {{ 'bordered' if parking and parking.id == p.id else '' }}">
+    <div class="row" style="justify-content:space-between;align-items:flex-start">
+      <div><h2>{{ p.name }}</h2><span class="muted" style="font-size:13px">{{ p.address_line or '' }} {{ p.postcode or '' }} {{ p.city or '' }}</span>
+        {% if user.is_superuser %}<span class="sub-line">{{ p.organization_name or '—' }}</span>{% endif %}</div>
+      <span class="badge {{ 'dark' if p.is_active else 'soft' }}">{{ t('mode.' ~ p.management_mode) }}</span>
+    </div>
+    <div class="stats">
+      <div><b>{{ p.places }}</b><span>{{ t('parkings.places') }}</span></div>
+      <div><b>{{ p.free_bays }}</b><span>{{ t('parkings.free') }}</span></div>
+      {% if p.management_mode == 'qr_code' %}
+      <div><b>{{ p.open_alarms }}</b><span>{{ t('parkings.alarms') }}</span></div>
+      {% else %}
+      <div><b>{{ p.devices }}</b><span>{{ t('parkings.devices_' ~ p.management_mode) }}</span></div>
+      {% endif %}
+    </div>
+    <div class="row">
+      <a class="btn primary" style="flex:1" href="/parkings/{{ p.id }}/open">{{ t('parkings.open') }}</a>
+      {% if not p.is_active %}<span class="badge soft">{{ t('common.disabled') }}</span>{% endif %}
+    </div>
+  </article>
+  {% endfor %}
+</section>
+{% endif %}
+{% endblock %}

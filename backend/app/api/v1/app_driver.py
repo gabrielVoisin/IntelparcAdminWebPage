@@ -316,8 +316,8 @@ def _sites(db: Session, lat: float | None, lng: float | None) -> list[AppSiteOut
     rows = db.execute(text("""
         SELECT s.id, s.code, s.name, s.address_line, s.city, s.latitude::float AS latitude, s.longitude::float AS longitude,
                coalesce(o.free_bays, 0) AS free_bays, coalesce(o.total_bays, 0) AS total_bays
-        FROM sites s LEFT JOIN v_site_occupancy o ON o.site_id = s.id
-        WHERE s.is_active ORDER BY s.code""")).all()
+        FROM sites s LEFT JOIN v_site_occupancy o ON o.site_id = s.id LEFT JOIN organizations org ON org.id = s.organization_id
+        WHERE s.is_active AND coalesce(org.is_active, true) ORDER BY s.code""")).all()
     out = []
     for r in rows:
         distance = None
@@ -368,6 +368,14 @@ def _bay_or_404(db: Session, bay_id: uuid.UUID) -> AppBayOut:
     return bay
 
 
+def _free_bay_of_site(db: Session, site_id: uuid.UUID) -> AppBayOut:
+    bay = _bay_out(db, """v.site_id = :s AND v.status = 'free' AND v.kind <> 'accessible'
+                          AND b.rental_status <> 'rented_exclusive' ORDER BY z.sort_order, v.number LIMIT 1""", {"s": site_id})
+    if bay is None:
+        raise HTTPException(409, "site_full")
+    return bay
+
+
 @router.get("/bays/by-code", response_model=AppBayOut)
 def bay_by_code(code: str = Query(..., description="Content of the QR code ('intelpark:bay:P1/EXT/05?ref=IPK-...&street=...&gps=...', "
                                                  "see app/services/bay_qr.py) or what the driver typed: 'P1/EXT/05'"),
@@ -377,6 +385,11 @@ def bay_by_code(code: str = Query(..., description="Content of the QR code ('int
         bay = _bay_out(db, "b.reference = :r", {"r": scanned.reference})
         if bay is not None:
             return bay
+        # QR code of a smart barrier (schema v5): the driver books a free place of that parking
+        site_id = db.execute(text("""SELECT c.site_id FROM devices d JOIN controllers c ON c.id = d.controller_id
+                                     WHERE d.reference = :r AND d.kind = 'barrier'"""), {"r": scanned.reference}).scalar()
+        if site_id is not None:
+            return _free_bay_of_site(db, site_id)
     raw = scanned.code or ""
     try:  # a QR code may also carry the bay id
         return _bay_or_404(db, uuid.UUID(raw))
@@ -386,6 +399,13 @@ def bay_by_code(code: str = Query(..., description="Content of the QR code ('int
     if len(parts) != 3:
         raise HTTPException(422, "bay_code_invalid")
     site_code, zone_code, number = (p.strip().upper() for p in parts)
+    if number.startswith("BR-"):  # a barrier's code typed by the driver ("GARE/A/BR-001")
+        site_id = db.execute(text("""SELECT c.site_id FROM devices d JOIN controllers c ON c.id = d.controller_id
+                                     JOIN sites s ON s.id = c.site_id
+                                     WHERE upper(s.code) = :s AND d.code = :d AND d.kind = 'barrier'"""),
+                             {"s": site_code, "d": number}).scalar()
+        if site_id is not None:
+            return _free_bay_of_site(db, site_id)
     bay = _bay_out(db, "upper(s.code) = :s AND upper(z.code) = :z AND (v.number = :n OR ltrim(v.number, '0') = ltrim(:n, '0'))",
                    {"s": site_code, "z": zone_code, "n": number})
     if bay is None:

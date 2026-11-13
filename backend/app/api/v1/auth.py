@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import get_db
-from app.deps import ACCESS_COOKIE, get_current_user
+from app.deps import ACCESS_COOKIE, get_current_user, user_can_sign_in
 from app.models import PushDevice, RefreshToken, StaffUser
 from app.schemas import LoginIn, PushTokenIn, RefreshIn, StaffOut, TokenOut, TurboIn, TurboStatusOut
 from app.security import create_access_token, new_refresh_token, sha256_hex, verify_password
@@ -40,6 +40,8 @@ def login(body: LoginIn, response: Response, db: Session = Depends(get_db)) -> T
     user = db.scalar(select(StaffUser).where(func.lower(StaffUser.email) == body.email.strip().lower()))
     if user is None or not user.is_active or not verify_password(body.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="invalid_credentials")
+    if not user_can_sign_in(user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="organization_suspended")
     user.last_login_at = datetime.now(UTC)
     audit(db, "auth.login", "staff_users", user.id, actor_id=user.id, data={"client": body.client_name})
     return _issue(db, user, body.client_name, response)
@@ -53,10 +55,10 @@ def turbo_status() -> TurboStatusOut:
 
 @router.post("/turbo", response_model=TokenOut)
 def login_turbo(body: TurboIn, response: Response, db: Session = Depends(get_db)) -> TokenOut:
-    """TEST ONLY (TURBO_LOGIN=true): sign in as the first active administrator, without a password."""
+    """TEST ONLY (TURBO_LOGIN=true): sign in as the super user (DR Automation), without a password."""
     if not get_settings().turbo_login:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="turbo_disabled")
-    user = db.scalar(select(StaffUser).where(StaffUser.role == "admin", StaffUser.is_active)
+    user = db.scalar(select(StaffUser).where(StaffUser.is_superuser, StaffUser.is_active)
                      .order_by(StaffUser.created_at).limit(1))
     if user is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="no_admin")
@@ -72,7 +74,7 @@ def refresh(body: RefreshIn, response: Response, db: Session = Depends(get_db)) 
     if token is None or token.revoked_at is not None or token.expires_at <= now:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="refresh_token_invalid")
     user = db.get(StaffUser, token.staff_user_id)
-    if user is None or not user.is_active:
+    if user is None or not user_can_sign_in(user):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="user_inactive")
     token.revoked_at = now  # rotation
     return _issue(db, user, token.client_name, response)

@@ -28,10 +28,15 @@ SQL_SITES = """
 SELECT s.id, s.code, s.name, s.address_line, s.postcode, s.city, s.country, s.timezone,
        s.latitude::float AS latitude, s.longitude::float AS longitude, s.is_active,
        coalesce(o.total_bays, 0) AS total_bays, coalesce(o.free_bays, 0) AS free_bays,
-       coalesce(o.occupied_bays, 0) AS occupied_bays
-FROM sites s LEFT JOIN v_site_occupancy o ON o.site_id = s.id
+       coalesce(o.occupied_bays, 0) AS occupied_bays,
+       s.organization_id, s.management_mode::text AS management_mode, s.capacity, org.name AS organization_name,
+       coalesce(o.total_bays, 0) AS places,
+       (SELECT count(*) FROM devices d JOIN controllers c ON c.id = d.controller_id WHERE c.site_id = s.id
+          AND d.kind IN ('front_presence_sensor', 'vertical_presence_sensor', 'barrier')) AS devices,
+       (SELECT count(*) FROM payment_alarms a WHERE a.site_id = s.id AND a.status = 'open') AS open_alarms
+FROM sites s LEFT JOIN v_site_occupancy o ON o.site_id = s.id LEFT JOIN organizations org ON org.id = s.organization_id
 WHERE true {filter}
-ORDER BY s.code
+ORDER BY org.name NULLS FIRST, s.name
 """
 
 
@@ -282,7 +287,23 @@ def free_bays(db: Session, site_ids: set[uuid.UUID] | None, limit: int = 300) ->
 
 
 # --- Customers -------------------------------------------------------------------
-def customer_search(db: Session, q: str, limit: int = 10) -> list[dict]:
+CUSTOMER_SCOPE = """
+  (c.organization_id = CAST(:org AS uuid)
+   OR EXISTS (SELECT 1 FROM reservations r JOIN bays b ON b.id = r.bay_id JOIN zones z ON z.id = b.zone_id
+              WHERE r.customer_id = c.id AND z.site_id = ANY(:site_ids))
+   OR EXISTS (SELECT 1 FROM subscriptions s WHERE s.customer_id = c.id AND s.site_id = ANY(:site_ids))
+   OR EXISTS (SELECT 1 FROM parking_sessions p WHERE p.customer_id = c.id AND p.site_id = ANY(:site_ids))
+   OR EXISTS (SELECT 1 FROM payments pa WHERE pa.customer_id = c.id AND pa.site_id = ANY(:site_ids)))"""
+
+
+def customer_scope_sql(site_ids: set[uuid.UUID] | None) -> str:
+    """Customers a parking owner may see: created by the account at the desk, or drivers who booked, subscribed,
+    parked or paid in one of its parkings. None (super user): every customer."""
+    return "" if site_ids is None else " AND " + CUSTOMER_SCOPE
+
+
+def customer_search(db: Session, q: str, limit: int = 10, site_ids: set[uuid.UUID] | None = None,
+                    org_id: uuid.UUID | None = None) -> list[dict]:
     rows = db.execute(
         text("""
         SELECT DISTINCT c.id, c.reference, c.first_name, c.last_name,
@@ -291,14 +312,26 @@ def customer_search(db: Session, q: str, limit: int = 10) -> list[dict]:
         WHERE c.anonymised_at IS NULL AND (:q = ''
            OR lower(c.first_name || ' ' || c.last_name) LIKE '%' || lower(:q) || '%'
            OR lower(c.last_name || ' ' || c.first_name) LIKE '%' || lower(:q) || '%'
-           OR v.plate_norm LIKE '%' || normalize_plate(:q) || '%')
+           OR v.plate_norm LIKE '%' || normalize_plate(:q) || '%') """ + customer_scope_sql(site_ids) + """
         ORDER BY c.last_name, c.first_name LIMIT :limit"""),
-        {"q": q, "limit": limit},
+        {"q": q, "limit": limit, "org": org_id, "site_ids": _ids(site_ids)},
     )
     return [dict(r._mapping) for r in rows]
 
 
-def customer_profile(db: Session, customer_id: uuid.UUID) -> dict | None:
+def customer_visible(db: Session, customer_id: uuid.UUID, site_ids: set[uuid.UUID] | None, org_id: uuid.UUID | None) -> bool:
+    if site_ids is None:
+        return True
+    return bool(db.execute(text("SELECT EXISTS (SELECT 1 FROM customers c WHERE c.id = :c" + customer_scope_sql(site_ids) + ")"),
+                           {"c": customer_id, "org": org_id, "site_ids": _ids(site_ids)}).scalar())
+
+
+def customer_count(db: Session, site_ids: set[uuid.UUID] | None, org_id: uuid.UUID | None) -> int:
+    return db.execute(text("SELECT count(*) FROM customers c WHERE c.anonymised_at IS NULL" + customer_scope_sql(site_ids)),
+                      {"org": org_id, "site_ids": _ids(site_ids)}).scalar_one()
+
+
+def customer_profile(db: Session, customer_id: uuid.UUID, site_ids: set[uuid.UUID] | None = None) -> dict | None:
     row = db.execute(text("SELECT * FROM customers WHERE id = :c"), {"c": customer_id}).first()
     if row is None:
         return None
@@ -324,9 +357,9 @@ def customer_profile(db: Session, customer_id: uuid.UUID) -> dict | None:
         {"c": customer_id},
     ).scalar()
     out["location"] = dict(loc._mapping) if loc else {"outside": True, "last_exit_at": last_exit}
-    sub = next((s for s in subscriptions(db, None, tab="all") if s["customer_id"] == customer_id and s["display_status"] != "ended"), None)
+    sub = next((s for s in subscriptions(db, site_ids, tab="all") if s["customer_id"] == customer_id and s["display_status"] != "ended"), None)
     out["subscription"] = sub
-    res = [r for r in reservations(db, None, tab="all") if r["customer_id"] == customer_id and r["display_status"] in ("ongoing", "overdue", "upcoming")]
+    res = [r for r in reservations(db, site_ids, tab="all") if r["customer_id"] == customer_id and r["display_status"] in ("ongoing", "overdue", "upcoming")]
     out["reservation"] = res[0] if res else None
     has_alarm = db.execute(
         text("""SELECT count(*) FROM payment_alarms a JOIN vehicles v ON v.plate_norm = normalize_plate(a.plate_display)
@@ -375,6 +408,15 @@ def tariffs(db: Session, site_id: uuid.UUID | None = None) -> dict:
     ]
     current = {r["kind"]: r for r in rows if r["valid_to"] is None}
     return {"current": current, "history": rows}
+
+
+def effective_tariffs(db: Session, site_id: uuid.UUID) -> dict:
+    """Prices of one parking: its own, else the platform's default price of the same kind."""
+    own = tariffs(db, site_id)
+    default = tariffs(db, None)["current"]
+    current = {k: {**v, "inherited": True} for k, v in default.items()}
+    current.update({k: {**v, "inherited": False} for k, v in own["current"].items()})
+    return {"current": current, "history": own["history"]}
 
 
 # --- Control cabinets ---------------------------------------------------------
@@ -433,30 +475,33 @@ def controllers(db: Session, site_ids: set[uuid.UUID] | None) -> list[dict]:
 
 
 # --- Team -----------------------------------------------------------------------
-def team(db: Session) -> list[dict]:
+def team(db: Session, org_id: uuid.UUID | None) -> list[dict]:
+    """Members of one account (Mon compte > Utilisateurs)."""
     rows = db.execute(
         text("""
-        SELECT u.id, u.email, u.full_name, u.role, u.locale, u.is_active, u.last_login_at,
+        SELECT u.id, u.email, u.full_name, u.role, u.locale, u.is_active, u.last_login_at, u.is_superuser, u.organization_id,
                (u.password_hash IS NULL) AS pending_invitation,
-               coalesce(array_agg(s.code ORDER BY s.code) FILTER (WHERE s.code IS NOT NULL), '{}') AS site_codes
+               coalesce(array_agg(s.code ORDER BY s.code) FILTER (WHERE s.code IS NOT NULL), '{}') AS site_codes,
+               coalesce(array_agg(s.name ORDER BY s.name) FILTER (WHERE s.name IS NOT NULL), '{}') AS site_names
         FROM staff_users u
         LEFT JOIN staff_site_access a ON a.staff_user_id = u.id LEFT JOIN sites s ON s.id = a.site_id
-        GROUP BY u.id ORDER BY u.role, u.full_name""")
+        WHERE u.organization_id IS NOT DISTINCT FROM :org
+        GROUP BY u.id ORDER BY u.role, u.full_name"""), {"org": org_id}
     )
     return [dict(r._mapping) for r in rows]
 
 
-def recent_exports(db: Session, limit: int = 6) -> list[dict]:
+def recent_exports(db: Session, limit: int = 6, site_ids: set[uuid.UUID] | None = None) -> list[dict]:
     rows = db.execute(
         text("""SELECT e.*, s.name AS site_name FROM report_exports e LEFT JOIN sites s ON s.id = e.site_id
-                ORDER BY e.created_at DESC LIMIT :l"""),
-        {"l": limit},
+                WHERE true {filter} ORDER BY e.created_at DESC LIMIT :l""".format(filter=_site_filter("e.site_id", site_ids))),
+        {"l": limit, "site_ids": _ids(site_ids)},
     )
     return [dict(r._mapping) for r in rows]
 
 
-def settings(db: Session) -> dict:
-    return settings_store.get_all(db)
+def settings(db: Session, site_id: uuid.UUID | None = None) -> dict:
+    return settings_store.get_all(db, site_id)
 
 
 def period_bounds(period: str, today: date | None = None) -> tuple[date, date]:

@@ -99,3 +99,31 @@ Renvoyer un événement avec le même `uid` et un `cleared_at` le fait passer à
 
 `bay.updated`, `payment_alarm.created`, `payment_alarm.updated`, `device_event`, `ble.identified`,
 `controller.acknowledged`, et `ping` toutes les 25 s.
+
+## Plateforme multi-comptes (schéma v5)
+
+Comptes (organisations), parkings avec mode de gestion, super user DR Automation. Détails, objets et règles :
+[PROMPT-TECHNIQUE.md](PROMPT-TECHNIQUE.md).
+
+| Méthode | Chemin | Droit requis | Rôle |
+|---|---|---|---|
+| POST | `/account/signup` | — | Inscription publique : compte + premier administrateur (cookie et jetons renvoyés) |
+| GET · PATCH | `/account` | connecté · admin | Le compte de l’utilisateur |
+| PUT | `/account/bank` | admin | IBAN (contrôle mod-97), BIC, titulaire, adresse ; l’IBAN est renvoyé masqué |
+| GET | `/account/payouts` | admin | Relevés mensuels par parking (encaissé, frais `payouts.fee_bp`, net) |
+| GET | `/parkings` | connecté | Parkings du compte (tous pour le super user) |
+| POST | `/parkings` | manager | Nom, capacité, adresse, GPS, `management_mode` (`qr_code`, `presence_sensor`, `smart_barrier`) |
+| PATCH | `/parkings/{id}` | manager | Nom, capacité, adresse, GPS, actif |
+| DELETE | `/parkings/{id}` | super user | Corps `{"confirm_name": "<nom>"}` |
+| POST | `/parkings/{id}/places` | manager | Mode QR : génère N places avec leur QR code |
+| DELETE | `/bays/{id}` | manager | Refusé (`bay_in_use`) si réservations, voiture ou abonné |
+| POST | `/parkings/{id}/sensors` | manager | Crée la place et son QR code ; `api_key` si la première armoire a été créée |
+| POST | `/parkings/{id}/barriers` | manager | Barrière avec son QR code (réserve une place libre) |
+| POST | `/parkings/{id}/controllers` | admin | Nouvelle armoire (clé API affichée une fois) ; 409 en mode QR |
+| DELETE | `/devices/{id}` | manager | Retire un capteur (et sa place si jamais utilisée) ou une barrière |
+| GET | `/devices/{id}/qr.svg` · `/qr.pdf` | connecté | QR code d’une barrière |
+| GET | `/admin/organizations` | super user | Tous les comptes |
+| PATCH · DELETE | `/admin/organizations/{id}` | super user | Suspendre / réactiver · supprimer (`confirm_name`) |
+
+`GET/PUT /settings` et `GET /tariffs`, `PUT /tariffs/{kind}` prennent un parking (`?site_id=` ou `site_id` dans le corps) ;
+sans parking ils portent sur les valeurs par défaut de la plateforme, modifiables par le super user seulement.

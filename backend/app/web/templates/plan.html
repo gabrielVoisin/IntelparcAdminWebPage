@@ -22,9 +22,6 @@
 
 <div class="row" style="justify-content:space-between">
   <div class="row">
-    <div class="segmented white" role="group" aria-label="{{ t('plan.site') }}">
-      {% for s in sites %}<a href="/plan?site={{ s.id }}" aria-current="{{ 'true' if s.id == site.id else 'false' }}">{{ s.code }}</a>{% endfor %}
-    </div>
     <div class="segmented white" role="group" aria-label="{{ t('plan.zone') }}">
       {% for z in zones %}<a href="/plan?site={{ site.id }}&zone={{ z.id }}" aria-current="{{ 'true' if z.id == zone.id else 'false' }}">{{ t('zone.' ~ z.code) }}</a>{% endfor %}
     </div>

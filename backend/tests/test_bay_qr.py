@@ -128,6 +128,8 @@ def test_rental_status_controls_booking(client, admin, driver, zone):
 @needs_db
 def test_qr_page_renders(client):
     r = client.post("/login", data={"email": "responsable@example.com", "password": "ChangeMe-2026!", "next": "/qr-codes"})
-    assert r.status_code == 200 and "QR" in r.text
+    assert r.status_code == 200 and "Mes parkings" in r.text  # several parkings: choose one first
+    p1 = next(p for p in client.get("/api/v1/parkings").json() if p["code"] == "P1")
+    client.get(f"/parkings/{p1['id']}/open")
     rows = client.get("/qr-codes?new=1")
     assert rows.status_code == 200 and 'id="qr-form"' in rows.text

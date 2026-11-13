@@ -1,6 +1,8 @@
 from fastapi import APIRouter
 
 from app.api.v1 import (
+    account,
+    admin,
     alarms,
     app_driver,
     auth,
@@ -8,6 +10,7 @@ from app.api.v1 import (
     controllers,
     customers,
     device,
+    parkings,
     reports,
     reservations,
     settings,
@@ -19,5 +22,5 @@ from app.api.v1 import (
 )
 
 api_router = APIRouter(prefix="/api/v1")
-for module in (auth, app_driver, sites, bay_qr, alarms, reservations, subscriptions, customers, tariffs, reports, settings, team, controllers, device, ws):
+for module in (auth, account, admin, parkings, app_driver, sites, bay_qr, alarms, reservations, subscriptions, customers, tariffs, reports, settings, team, controllers, device, ws):
     api_router.include_router(module.router)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -9,10 +10,10 @@ from datetime import UTC, datetime
 import jwt
 from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app.db import get_db
-from app.models import Controller, Customer, Site, StaffUser
+from app.models import Controller, Customer, Organization, Site, StaffUser
 from app.security import controller_key_matches, decode_access_token, decode_customer_access_token, split_controller_key
 
 ACCESS_COOKIE = "pk_access"
@@ -49,15 +50,32 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> StaffUs
     except jwt.InvalidTokenError as exc:
         raise _unauthorized("token_invalid") from exc
     user = db.get(StaffUser, uuid.UUID(payload["sub"]))
-    if user is None or not user.is_active:
+    if user is None or not user_can_sign_in(user):
         raise _unauthorized("user_inactive")
     request.state.user = user
     return user
 
 
+def user_can_sign_in(user: StaffUser) -> bool:
+    """Active person in an active account (a suspended account locks out all its members; never the super user)."""
+    if not user.is_active:
+        return False
+    if user.is_superuser:
+        return True
+    org = user.organization
+    return org is not None and org.is_active
+
+
+def require_superuser(user: StaffUser = Depends(get_current_user)) -> StaffUser:
+    """DR Automation only (turbo button): every account, every parking, deletions."""
+    if not user.is_superuser:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="superuser_only")
+    return user
+
+
 def require_role(minimum: str) -> Callable[[StaffUser], StaffUser]:
     def checker(user: StaffUser = Depends(get_current_user)) -> StaffUser:
-        if ROLE_RANK[user.role] < ROLE_RANK[minimum]:
+        if not user.is_superuser and ROLE_RANK[user.role] < ROLE_RANK[minimum]:
             raise HTTPException(status.HTTP_403_FORBIDDEN, detail="insufficient_role")
         return user
 
@@ -82,7 +100,7 @@ def require_permission(permission: str) -> Callable[[StaffUser], StaffUser]:
     allowed = PERMISSIONS[permission]
 
     def checker(user: StaffUser = Depends(get_current_user)) -> StaffUser:
-        if user.role not in allowed:
+        if not user.is_superuser and user.role not in allowed:
             raise HTTPException(status.HTTP_403_FORBIDDEN, detail="permission_denied")
         return user
 
@@ -90,10 +108,26 @@ def require_permission(permission: str) -> Callable[[StaffUser], StaffUser]:
 
 
 def allowed_site_ids(user: StaffUser) -> set[uuid.UUID] | None:
-    """None means every site (administrators, or staff without restrictions)."""
-    if user.role == "admin" or not user.sites:
+    """Parkings this person may see. None means every parking of the platform (super user only).
+
+    Members of an account see the parkings of their account; a member who is not an administrator and has
+    a list of parkings (staff_site_access) only sees those.
+    """
+    if user.is_superuser:
         return None
-    return {s.id for s in user.sites}
+    if user.organization_id is None:
+        return set()
+    db = object_session(user)
+    own = set(db.scalars(select(Site.id).where(Site.organization_id == user.organization_id))) if db else set()
+    if user.role != "admin" and user.sites:
+        own &= {s.id for s in user.sites}
+    return own
+
+
+def user_organization(user: StaffUser) -> Organization:
+    if user.organization is None:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="no_organization")
+    return user.organization
 
 
 def check_site_access(user: StaffUser, site_id: uuid.UUID) -> None:
@@ -124,7 +158,10 @@ def get_current_controller(
         raise _unauthorized("controller_key_invalid")
     controller.last_seen_at = datetime.now(UTC)
     if request.client:
-        controller.ip_address = request.client.host
+        try:
+            controller.ip_address = str(ipaddress.ip_address(request.client.host))
+        except ValueError:  # e.g. "testclient"
+            pass
     return controller
 
 

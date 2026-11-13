@@ -230,3 +230,37 @@ tr.ev-unack td.msg { font-weight: 600; }
   .main { padding: 20px 16px; }
   .page-head h1 { font-size: 26px; }
 }
+
+/* --- Multi-account: top bar, "Mon compte" menu, parkings ------------------------------------- */
+.nav-account { border-top: 1px solid var(--ink-2); padding-top: 16px; }
+.nav-title { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #8F939B; padding: 0 12px 4px; }
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: -8px 0 -4px; }
+.crumb { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; }
+.crumb a { color: var(--muted); }
+.account-menu { position: relative; }
+.account-menu summary { list-style: none; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px 0 6px; border: 1px solid var(--ink); border-radius: 999px; background: #fff; font-weight: 600; cursor: pointer; }
+.account-menu summary::-webkit-details-marker { display: none; }
+.account-menu .avatar.small { width: 32px; height: 32px; font-size: 13px; }
+.account-menu .menu { position: absolute; right: 0; top: calc(100% + 8px); z-index: 20; width: min(340px, calc(100vw - 32px)); background: #fff; border: 1px solid var(--line-2); border-radius: 12px; box-shadow: 0 12px 32px rgba(0,0,0,.14); padding: 8px; display: flex; flex-direction: column; gap: 2px; }
+.account-menu .menu a { display: flex; align-items: center; min-height: 40px; padding: 6px 12px; border-radius: 8px; color: var(--ink); text-decoration: none; }
+.account-menu .menu a:hover, .account-menu .menu a[aria-current="true"] { background: var(--bg); }
+.account-menu .menu-head { display: flex; flex-direction: column; padding: 8px 12px 10px; font-size: 14px; }
+.account-menu .menu-title { font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); padding: 8px 12px 2px; }
+.account-menu hr { border: 0; border-top: 1px solid var(--line); margin: 6px 0; width: 100%; }
+.parking-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.parking-card { display: flex; flex-direction: column; gap: 12px; }
+.parking-card .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.parking-card .stats div { background: var(--bg); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; }
+.parking-card .stats b { font-size: 20px; }
+.parking-card .stats span { font-size: 12px; color: var(--muted); }
+.mode-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.mode-card { display: flex; gap: 10px; align-items: flex-start; border: 1.5px solid var(--line-2); border-radius: 12px; padding: 14px; cursor: pointer; background: #fff; }
+.mode-card:has(input:checked) { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.mode-card input { margin-top: 4px; accent-color: var(--ink); width: 18px; height: 18px; }
+.key-banner { background: var(--ink); color: #fff; border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 16px 40px rgba(0,0,0,.3); }
+.key-banner code { background: #000; color: #fff; padding: 10px 12px; border-radius: 8px; font-size: 14px; word-break: break-all; user-select: all; }
+.key-banner .btn { align-self: flex-start; }
+.qr-thumb { width: 72px; height: 72px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: middle; background: var(--line-2); }
+.status-dot.occupied, .status-dot.alarm { background: var(--red); } .status-dot.free { background: #1E8E3E; } .status-dot.reserved { background: var(--blue); }
+@media (max-width: 720px) { .main { padding: 16px; } .account-menu .menu { right: -8px; } }

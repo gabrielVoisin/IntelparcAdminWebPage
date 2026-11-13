@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}{{ t('nav.bank') }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div><div class="eyebrow">{{ t('bank.subtitle') }}</div><h1>{{ t('nav.bank') }}</h1></div>
+</header>
+
+{% if not org %}
+<p class="notice">{{ t('error.no_organization') }}</p>
+{% else %}
+<div class="split">
+  <section class="card wide" aria-labelledby="bank-title">
+    <div class="card-head"><div><h2 id="bank-title">{{ t('bank.details') }}</h2><span class="muted" style="font-size:14px">{{ t('bank.details_help') }}</span></div>
+      {% if org.bank_iban_masked %}<span class="badge dark">{{ t('bank.ok') }}</span>{% else %}<span class="badge red">{{ t('bank.missing') }}</span>{% endif %}</div>
+    {% if org.bank_iban_masked %}
+    <div class="kpis">
+      <div class="kpi"><span class="label">{{ t('bank.holder') }}</span><span style="font-weight:600">{{ org.bank_holder }}</span></div>
+      <div class="kpi"><span class="label">IBAN</span><span class="mono" style="font-weight:600">{{ org.bank_iban_masked }}</span></div>
+      <div class="kpi"><span class="label">BIC</span><span class="mono" style="font-weight:600">{{ org.bank_bic }}</span></div>
+    </div>
+    <span class="muted" style="font-size:13px">{{ t('bank.updated', date=fdt(org.bank_updated_at)) if org.bank_updated_at else '' }}</span>
+    {% endif %}
+    {% if is_admin %}
+    <form class="form-grid" data-api-form="PUT /api/v1/account/bank" data-flat data-success="{{ t('bank.saved') }}" style="align-items:end">
+      <label class="field full">{{ t('bank.holder') }}<input class="input" name="holder" required minlength="2" maxlength="140" value="{{ org.bank_holder or org.name }}"></label>
+      <label class="field">IBAN<input class="input mono" name="iban" required minlength="15" maxlength="42" placeholder="CH93 0076 2011 6238 5295 7" autocomplete="off"></label>
+      <label class="field">BIC / SWIFT<input class="input mono" name="bic" required minlength="8" maxlength="11" placeholder="POFICHBEXXX" value="{{ org.bank_bic or '' }}" autocomplete="off"></label>
+      <label class="field full">{{ t('bank.address') }}<input class="input" name="address" maxlength="200" value="{{ org.bank_address or '' }}"></label>
+      <div class="full"><button class="btn primary" type="submit">{{ t('bank.save') }}</button>
+        <span class="help muted" style="font-size:13px;margin-left:8px">{{ t('bank.iban_hidden') }}</span></div>
+    </form>
+    {% else %}
+    <p class="notice">{{ t('bank.admin_only') }}</p>
+    {% endif %}
+  </section>
+
+  <section class="card narrow" aria-labelledby="org-title">
+    <div><h2 id="org-title">{{ t('bank.account') }}</h2><span class="muted" style="font-size:14px">{{ t('org_kind.' ~ org.kind) }}</span></div>
+    <form class="form-grid" style="grid-template-columns:1fr" data-api-form="PATCH /api/v1/account" data-flat data-success="{{ t('settings.saved') }}">
+      <label class="field">{{ t('signup.organization') }}<input class="input" name="name" required minlength="2" value="{{ org.name }}" {{ '' if is_admin else 'readonly' }}></label>
+      <label class="field">{{ t('login.email') }}<input class="input" type="email" name="email" value="{{ org.email or '' }}" {{ '' if is_admin else 'readonly' }}></label>
+      <label class="field">{{ t('signup.phone') }}<input class="input" name="phone" value="{{ org.phone or '' }}" {{ '' if is_admin else 'readonly' }}></label>
+      {% if is_admin %}<div><button class="btn" type="submit">{{ t('action.save') }}</button></div>{% endif %}
+    </form>
+  </section>
+</div>
+
+<section class="card" aria-labelledby="payouts-title">
+  <div><h2 id="payouts-title">{{ t('bank.payouts') }}</h2><span class="muted" style="font-size:14px">{{ t('bank.payouts_help') }}</span></div>
+  {% if months %}
+  <div class="table-wrap"><table class="data">
+    <thead><tr><th>{{ t('bank.month') }}</th><th>{{ t('col.site') }}</th><th>{{ t('bank.payments') }}</th><th>{{ t('bank.gross') }}</th><th>{{ t('bank.fee') }}</th><th>{{ t('bank.net') }}</th><th>{{ t('col.status') }}</th></tr></thead>
+    <tbody>
+    {% for month, rows in months %}
+      {% for r in rows %}
+      <tr><td class="mono">{{ month.strftime('%m.%Y') }}</td><td><b>{{ r.site_name }}</b></td><td class="mono">{{ r.payments }}</td>
+        <td>{{ money(r.gross_cents, r.currency, true) }}</td><td class="muted">{{ money(r.fee_cents, r.currency, true) }}</td>
+        <td><b>{{ money(r.net_cents, r.currency, true) }}</b></td>
+        <td><span class="badge {{ 'outline' if r.status == 'in_progress' else 'dark' }}">{{ t('bank.status_' ~ r.status) }}</span></td></tr>
+      {% endfor %}
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="empty">{{ t('bank.no_payouts') }}</p>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

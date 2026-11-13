@@ -69,13 +69,13 @@
       {% for s in sites if s.latitude and lats %}
         {% set left = 15 + 70 * ((s.longitude - lons|min) / ((lons|max - lons|min) or 1)) %}
         {% set top = 20 + 65 * ((lats|max - s.latitude) / ((lats|max - lats|min) or 1)) %}
-        <a class="pin {% if site and s.id == site.id %}on{% elif s.free_bays == 0 %}full{% endif %}" href="/?site={{ s.id }}" style="left:{{ left }}%;top:{{ top }}%">
+        <a class="pin {% if site and s.id == site.id %}on{% elif s.free_bays == 0 %}full{% endif %}" href="/parkings/{{ s.id }}/open" style="left:{{ left }}%;top:{{ top }}%">
           <span><b>{{ s.code }}</b>{{ t('dashboard.full') if s.free_bays == 0 else t('dashboard.n_free', n=s.free_bays) }}</span><i></i>
         </a>
       {% endfor %}
     </div>
     {% for s in sites %}
-      <a class="site-row {% if site and s.id == site.id %}on{% endif %}" href="/?site={{ s.id }}">
+      <a class="site-row {% if site and s.id == site.id %}on{% endif %}" href="/parkings/{{ s.id }}/open">
         <span><b style="display:block">{{ s.name }}</b><span class="muted" style="font-size:13px">{{ s.address_line or '' }} {{ s.city or '' }}</span></span>
         <span class="badge {{ 'soft' if s.free_bays == 0 else ('amber' if s.free_bays / (s.total_bays or 1) < 0.15 else 'blue') }}">{{ t('dashboard.full') if s.free_bays == 0 else t('dashboard.n_free', n=s.free_bays) }}</span>
       </a>
@@ -87,7 +87,7 @@
       <div class="bar" aria-hidden="true"><span style="width:{{ (100 * site.occupied_bays / (site.total_bays or 1))|round }}%"></span></div>
       <div class="row">
         {% if site.latitude %}<a class="btn" style="flex:1" href="https://www.openstreetmap.org/directions?to={{ site.latitude }},{{ site.longitude }}" target="_blank" rel="noopener">{{ t('dashboard.directions') }}</a>{% endif %}
-        <a class="btn primary" style="flex:1" href="/plan?site={{ site.id }}">{{ t('dashboard.open_site') }}</a>
+        <a class="btn primary" style="flex:1" href="/plan">{{ t('dashboard.open_site') }}</a>
       </div>
     </div>
     {% endif %}

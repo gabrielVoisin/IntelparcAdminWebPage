@@ -52,8 +52,40 @@
     cur[parts[parts.length - 1]] = value;
   }
 
+  // A new cabinet's API key is shown once: it stays on screen (after the reload) until it is closed.
+  function showKey(key, code) {
+    const box = document.createElement("div");
+    box.className = "key-banner";
+    box.setAttribute("role", "alertdialog");
+    const title = document.createElement("b");
+    title.textContent = (T.keyTitle || "API key") + (code ? " · " + code : "");
+    const help = document.createElement("span");
+    help.style.fontSize = "13px";
+    help.textContent = T.keyHelp || "";
+    const value = document.createElement("code");
+    value.textContent = key;
+    const row = document.createElement("div");
+    row.className = "row";
+    const copy = Object.assign(document.createElement("button"), { className: "btn", type: "button", textContent: T.keyCopy || "Copy" });
+    copy.addEventListener("click", () => navigator.clipboard && navigator.clipboard.writeText(key));
+    const close = Object.assign(document.createElement("button"), { className: "btn ghost", type: "button", textContent: T.close || "OK" });
+    close.style.color = "#fff";
+    close.addEventListener("click", () => box.remove());
+    row.append(copy, close);
+    box.append(title, help, value, row);
+    const main = document.querySelector("main .topbar");
+    if (main) main.after(box); else document.body.prepend(box);
+    box.scrollIntoView({ block: "nearest" });
+  }
+
   async function run(el, spec, body) {
     if (el.dataset.confirm && !window.confirm(el.dataset.confirm)) return;
+    if (el.dataset.confirmName !== undefined) {
+      // Deleting a parking or an account: the name must be typed again.
+      const typed = window.prompt((T.confirmName || "Type the name to confirm:") + "\n" + el.dataset.confirmName);
+      if (typed === null) return;
+      body = Object.assign({}, body || {}, { confirm_name: typed.trim() });
+    }
     el.setAttribute("aria-busy", "true");
     if ("disabled" in el) el.disabled = true;
     try {
@@ -68,7 +100,10 @@
         return;
       }
       if (el.dataset.success) sessionStorage.setItem("pk_toast", el.dataset.success);
-      location.reload();
+      if (out && out.api_key) sessionStorage.setItem("pk_key", JSON.stringify({ key: out.api_key, code: out.controller_code || out.code || "" }));
+      const target = (out && out.redirect) || el.dataset.redirect || (el.form && el.form.dataset.redirect);
+      if (target) location.href = target.replace("{id}", out && out.id ? out.id : "");
+      else location.reload();
     } catch (err) {
       toast(err.message, true);
       if ("disabled" in el) el.disabled = false;
@@ -105,6 +140,7 @@
     const body = {};
     form.querySelectorAll("[name]").forEach((input) => {
       if (input.dataset.skipEmpty !== undefined && input.value === "") return;
+      if (input.type === "radio" && !input.checked) return;
       if (form.dataset.flat !== undefined) body[input.name] = parseValue(input);
       else setPath(body, input.name, parseValue(input));
     });
@@ -176,6 +212,12 @@
     poll();
     liveTimer = setInterval(poll, 1000);
   });
+
+  const pendingKey = sessionStorage.getItem("pk_key");
+  if (pendingKey) {  // shown once, on the page where the cabinet was created; it stays until closed or the page changes
+    sessionStorage.removeItem("pk_key");
+    try { const k = JSON.parse(pendingKey); showKey(k.key, k.code); } catch (e) { /* ignore */ }
+  }
 
   const pending = sessionStorage.getItem("pk_toast");
   if (pending) { sessionStorage.removeItem("pk_toast"); toast(pending, false); }

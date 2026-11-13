@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% set barrier = mode == 'smart_barrier' %}
+{% block title %}{{ t('nav.barriers') if barrier else t('nav.sensors') }}{% endblock %}
+{% block live %}bay.,device.{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div><div class="eyebrow">{{ t('equipment.subtitle_' ~ mode) }}</div><h1>{{ t('nav.barriers') if barrier else t('nav.sensors') }}</h1></div>
+  <a class="btn" href="/devices">{{ t('nav.devices') }}</a>
+</header>
+
+{% if welcome %}<p class="notice" role="status">{{ t('equipment.welcome_' ~ mode) }}</p>{% endif %}
+
+<section class="kpis" aria-label="{{ t('dashboard.key_figures') }}">
+  <div class="kpi"><span class="label">{{ t('equipment.count_' ~ mode) }}</span><span class="value">{{ items|length }}</span></div>
+  <div class="kpi"><span class="label">{{ t('parkings.places') }}</span><span class="value">{{ parking.places }}</span></div>
+  <div class="kpi"><span class="label">{{ t('parkings.free') }}</span><span class="value">{{ parking.free_bays }}</span></div>
+  <div class="kpi"><span class="label">{{ t('equipment.cabinets') }}</span><span class="value">{{ cabinets|length }}</span></div>
+</section>
+
+{% if can_edit %}
+<section class="card" aria-labelledby="add-title">
+  <div><h2 id="add-title">{{ t('equipment.add_' ~ mode) }}</h2><span class="muted" style="font-size:14px">{{ t('equipment.add_help_' ~ mode) }}</span></div>
+  <form class="form-grid" data-api-form="POST /api/v1/parkings/{{ parking.id }}/{{ 'barriers' if barrier else 'sensors' }}" data-flat
+        data-success="{{ t('equipment.added_' ~ mode) }}" style="align-items:end">
+    {% if barrier %}
+      <label class="field">{{ t('equipment.barrier_name') }}<input class="input" name="name" required maxlength="80" placeholder="{{ t('equipment.barrier_name_placeholder') }}"></label>
+      <label class="field">{{ t('equipment.direction') }}<select class="input" name="direction"><option value="entry">{{ t('direction.entry') }}</option><option value="exit">{{ t('direction.exit') }}</option></select></label>
+    {% else %}
+      <label class="field">{{ t('equipment.sensor_kind') }}<select class="input" name="kind"><option value="front">{{ t('equipment.kind_front') }}</option><option value="vertical">{{ t('equipment.kind_vertical') }}</option></select></label>
+      <label class="field">{{ t('equipment.bay_kind') }}<select class="input" name="bay_kind">{% for k in ['standard', 'accessible', 'ev'] %}<option value="{{ k }}">{{ t('bay_kind.' ~ k) }}</option>{% endfor %}</select></label>
+      <label class="field">{{ t('equipment.live_url') }}<input class="input mono" name="live_url" type="url" maxlength="300" placeholder="http://192.168.1.50:8080" data-skip-empty></label>
+    {% endif %}
+    <label class="field">{{ t('equipment.address') }}<input class="input mono" name="address" maxlength="120" placeholder="{{ t('equipment.address_placeholder') }}" data-skip-empty></label>
+    {% if cabinets %}
+    <label class="field">{{ t('equipment.cabinet') }}<select class="input" name="controller_id" data-skip-empty>
+      {% for c in cabinets %}<option value="{{ c.id }}">{{ c.code }} · {{ c.name }}</option>{% endfor %}</select></label>
+    {% else %}
+    <p class="help muted" style="margin:0;font-size:13px">{{ t('equipment.first_cabinet') }}</p>
+    {% endif %}
+    <div><button class="btn primary" type="submit">+ {{ t('action.add') }}</button></div>
+  </form>
+</section>
+{% endif %}
+
+<section class="card" aria-labelledby="list-title">
+  <div class="card-head"><h2 id="list-title">{{ t('equipment.list_' ~ mode) }}</h2>
+    {% if user.is_superuser or user.role == 'admin' %}<button class="btn small" data-api="POST /api/v1/parkings/{{ parking.id }}/controllers" data-body="{}" data-success="{{ t('equipment.cabinet_added') }}">+ {{ t('equipment.new_cabinet') }}</button>{% endif %}</div>
+  {% if items %}
+  <div class="table-wrap"><table class="data" style="min-width:820px">
+    <thead><tr><th>QR</th><th>{{ t('equipment.device') }}</th>{% if not barrier %}<th>{{ t('plan.bay') }}</th>{% endif %}<th>{{ t('equipment.cabinet') }}</th><th>{{ t('col.status') }}</th><th></th></tr></thead>
+    <tbody>
+    {% for d in items %}
+      <tr>
+        <td>{% if barrier and d.reference %}<img class="qr-thumb" src="/api/v1/devices/{{ d.id }}/qr.svg" alt="QR {{ d.code }}" loading="lazy">
+            {% elif not barrier and d.bay_reference %}<img class="qr-thumb" src="/api/v1/bays/{{ d.bay_id }}/qr.svg" alt="QR {{ d.bay_number }}" loading="lazy">{% else %}—{% endif %}</td>
+        <td><b>{{ d.name if barrier else d.code }}</b><span class="sub-line">{% if barrier %}{{ d.code }} · {{ t('direction.' ~ d.direction) }}{% else %}{{ t('equipment.kind_' ~ ('front' if d.kind == 'front_presence_sensor' else 'vertical')) }}{% endif %}{% if d.address %} · {{ d.address }}{% endif %}</span>
+          {% if d.reference or d.bay_reference %}<span class="sub-line mono">{{ d.reference or d.bay_reference }}</span>{% endif %}</td>
+        {% if not barrier %}<td><span class="status-dot {{ d.bay_status }}" aria-hidden="true"></span><b>{{ d.bay_number or '—' }}</b> <span class="muted">{{ t('bay_status.' ~ d.bay_status) }}</span></td>{% endif %}
+        <td class="mono">{{ d.controller_code }}</td>
+        <td><span class="badge {{ 'dark' if d.status == 'ok' else 'red' }}">{{ t('device_status.' ~ d.status) }}</span>{% if not d.address %} <span class="badge dashed">{{ t('equipment.not_configured') }}</span>{% endif %}</td>
+        <td style="text-align:right;white-space:nowrap">
+          {% if barrier and d.reference %}<a class="btn small" href="/api/v1/devices/{{ d.id }}/qr.pdf">{{ t('qr.download') }}</a>
+          {% elif d.bay_reference %}<a class="btn small" href="/api/v1/bays/{{ d.bay_id }}/qr.pdf">{{ t('qr.download') }}</a>{% endif %}
+          {% if can_edit %}<button class="btn small danger-outline" data-api="DELETE /api/v1/devices/{{ d.id }}" data-confirm="{{ t('equipment.delete_confirm', code=d.code) }}">{{ t('action.delete') }}</button>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="empty">{{ t('equipment.none_' ~ mode) }}</p>{% endif %}
+</section>
+{% endblock %}

@@ -11,13 +11,21 @@
 {%- for code in ['invalid_credentials', 'permission_denied', 'insufficient_role', 'bay_already_booked', 'bay_blocked', 'alarm_not_open',
                  'daily_pass_cheaper_than_one_hour', 'plate_already_registered', 'email_already_used', 'cannot_demote_or_disable_yourself',
                  'csrf_header_missing', 'refresh_token_invalid', 'user_inactive', 'site_not_allowed', 'ends_before_start', 'invalid_period',
-                 'reservation_closed', 'subscription_terminated', 'bay_or_customer_not_found', 'bay_rented', 'nothing_to_update', 'qr_not_generated'] %}
+                 'reservation_closed', 'subscription_terminated', 'bay_or_customer_not_found', 'bay_rented', 'nothing_to_update', 'qr_not_generated',
+                 'superuser_only', 'no_organization', 'organization_suspended', 'invalid_email', 'password_too_short', 'invalid_iban', 'invalid_bic',
+                 'invalid_mode', 'invalid_capacity', 'invalid_count', 'too_many_places', 'bay_in_use', 'no_devices_in_qr_mode', 'site_full',
+                 'confirm_name_mismatch', 'cannot_delete_internal', 'cannot_suspend_internal', 'site_required', 'invalid_sensor_kind', 'invalid_direction'] %}
       {{ code }}: {{ t('error.' ~ code)|tojson }},
 {%- endfor %}
-{%- for code in ['alarm', 'bay', 'controller', 'customer', 'invitation', 'member', 'plan', 'reservation', 'site', 'subscription', 'vehicle', 'zone'] %}
+{%- for code in ['alarm', 'bay', 'controller', 'customer', 'device', 'invitation', 'member', 'organization', 'plan', 'reservation', 'site', 'subscription', 'vehicle', 'zone'] %}
       {{ code }}_not_found: {{ t('error.not_found')|tojson }},
 {%- endfor %}
-    }
+    },
+    confirmName: {{ t('common.type_name_to_confirm')|tojson }},
+    keyTitle: {{ t('key.title')|tojson }},
+    keyHelp: {{ t('key.help')|tojson }},
+    keyCopy: {{ t('key.copy')|tojson }},
+    close: {{ t('action.close')|tojson }}
   };
 </script>
 <script src="/static/js/app.js?v={{ asset_v }}" defer></script>
@@ -27,17 +35,25 @@
   <nav class="sidebar" aria-label="{{ t('nav.main') }}">
     <div class="brand">
       <div class="logo" aria-hidden="true">P</div>
-      <div><div class="name">{{ t('app.site_name') }}</div><div class="sub">{{ t('app.back_office') }}</div></div>
+      <div><div class="name">{{ parking.name if parking else t('app.platform_name') }}</div><div class="sub">{{ t('mode.' ~ parking.management_mode) if parking else t('app.back_office') }}</div></div>
     </div>
+    {% if parking and nav %}
     <div class="nav">
       {% for key, href, label in nav %}
+      <a href="{{ href }}" {% if active == key %}aria-current="page"{% endif %}>{{ t(label) }}</a>
+      {% endfor %}
+    </div>
+    {% endif %}
+    <div class="nav nav-account" aria-label="{{ t('nav.my_account') }}">
+      <span class="nav-title">{{ t('nav.my_account') }}</span>
+      {% for key, href, label in account_nav %}
       <a href="{{ href }}" {% if active == key %}aria-current="page"{% endif %}>{{ t(label) }}</a>
       {% endfor %}
     </div>
     <div class="foot">
       <div class="me">
         <div class="avatar" aria-hidden="true">{{ user.full_name[:1] }}{{ (user.full_name.split(' ')[-1] or ' ')[:1] }}</div>
-        <div><div style="font-size:14px;font-weight:600">{{ user.full_name }}</div><div style="font-size:13px;color:#B5B8BF">{{ t('role.' ~ user.role) }}</div></div>
+        <div><div style="font-size:14px;font-weight:600">{{ user.full_name }}</div><div style="font-size:13px;color:#B5B8BF">{{ t('role.superuser') if user.is_superuser else t('role.' ~ user.role) }}</div></div>
       </div>
       <div class="langs" aria-label="{{ t('nav.language') }}">
         {% for code in locales %}<a href="/lang/{{ code }}" aria-current="{{ 'true' if code == locale else 'false' }}" lang="{{ code }}">{{ code|upper }}</a>{% endfor %}
@@ -46,6 +62,34 @@
     </div>
   </nav>
   <main class="main">
+    <div class="topbar">
+      <div class="crumb">
+        {% if parking %}
+          <a href="/parkings">{{ t('nav.my_parkings') }}</a><span aria-hidden="true">›</span><b>{{ parking.name }}</b>
+          <span class="badge outline">{{ t('mode.' ~ parking.management_mode) }}</span>
+          {% if user.is_superuser and parking.organization_name %}<span class="muted" style="font-size:13px">{{ parking.organization_name }}</span>{% endif %}
+        {% else %}
+          <b>{{ organization.name if organization else t('app.platform_name') }}</b>
+        {% endif %}
+      </div>
+      <details class="account-menu">
+        <summary><span class="avatar small" aria-hidden="true">{{ user.full_name[:1] }}</span>{{ t('nav.my_account') }}{% if user.is_superuser %} <span class="badge dark">{{ t('role.superuser_short') }}</span>{% endif %}</summary>
+        <div class="menu" role="menu">
+          <div class="menu-head"><b>{{ user.full_name }}</b><span class="muted">{{ organization.name if organization else '' }} · {{ t('role.superuser') if user.is_superuser else t('role.' ~ user.role) }}</span></div>
+          <span class="menu-title">{{ t('nav.my_parkings') }}</span>
+          {% for p in my_parkings[:8] %}
+            <a role="menuitem" href="/parkings/{{ p.id }}/open" {% if parking and p.id == parking.id %}aria-current="true"{% endif %}>
+              <span><b>{{ p.name }}</b><span class="sub-line">{{ t('mode.' ~ p.management_mode) }} · {{ t('parkings.n_places', n=p.places) }}</span></span></a>
+          {% else %}
+            <span class="muted" style="padding:6px 12px;font-size:13px">{{ t('parkings.none') }}</span>
+          {% endfor %}
+          {% if my_parkings|length > 8 %}<a role="menuitem" href="/parkings">{{ t('parkings.see_all', n=my_parkings|length) }}</a>{% endif %}
+          <hr>
+          {% for key, href, label in account_nav %}<a role="menuitem" href="{{ href }}">{{ t(label) }}</a>{% endfor %}
+          <a role="menuitem" href="/logout">{{ t('nav.logout') }}</a>
+        </div>
+      </details>
+    </div>
     {% block content %}{% endblock %}
   </main>
 </div>

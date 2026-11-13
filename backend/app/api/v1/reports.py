@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.deps import check_site_access, get_site_or_404, require_permission, require_role
+from app.deps import allowed_site_ids, check_site_access, get_site_or_404, require_permission, require_role
 from app.i18n import negotiate_locale, translate
 from app.models import ReportExport, StaffUser
 from app.schemas import ReportExportOut, ReportType
@@ -29,7 +29,7 @@ def list_reports(request: Request, user: StaffUser = Depends(require_role("viewe
 
 @router.get("/exports", response_model=list[ReportExportOut])
 def recent_exports(user: StaffUser = Depends(require_role("viewer")), db: Session = Depends(get_db)) -> list[dict]:
-    return queries.recent_exports(db, limit=20)
+    return queries.recent_exports(db, limit=20, site_ids=allowed_site_ids(user))
 
 
 @router.get("/{report_type}")
@@ -48,6 +48,8 @@ def download(
     locale = negotiate_locale(request, user.locale)
     if site_id is not None:
         site_name = get_site_or_404(db, site_id, user).name
+    elif not user.is_superuser:
+        raise HTTPException(422, "site_required")
     else:
         site_name = translate("reports.all_sites", locale)
     if period == "custom":
