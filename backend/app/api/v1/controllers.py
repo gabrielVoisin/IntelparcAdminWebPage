@@ -72,6 +72,7 @@ def list_devices(controller_id: uuid.UUID, user: StaffUser = Depends(get_current
 def register_controller(body: ControllerCreateIn, user: StaffUser = Depends(require_role("admin")),
                         db: Session = Depends(get_db)) -> ControllerCreatedOut:
     """Register a new Raspberry Pi. The API key is returned once and never stored in clear."""
+    check_site_access(user, body.site_id)
     key, prefix, key_hash = new_controller_key()
     controller = Controller(site_id=body.site_id, code=body.code, name=body.name, hardware=body.hardware,
                             api_key_prefix=prefix, api_key_hash=key_hash)
@@ -86,6 +87,7 @@ def rotate_key(controller_id: uuid.UUID, user: StaffUser = Depends(require_role(
     controller = db.get(Controller, controller_id)
     if controller is None:
         raise HTTPException(404, "controller_not_found")
+    check_site_access(user, controller.site_id)
     key, prefix, key_hash = new_controller_key()
     controller.api_key_prefix, controller.api_key_hash = prefix, key_hash
     audit(db, "controller.rotate_key", "controllers", controller.id, actor_id=user.id)

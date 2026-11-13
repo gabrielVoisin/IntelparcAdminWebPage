@@ -11,7 +11,7 @@
   <form class="card" method="post" action="/login">
     <div class="brand" style="padding:0">
       <div class="logo" aria-hidden="true" style="color:#fff">P</div>
-      <div><div class="name">{{ t('app.site_name') }}</div><div class="muted" style="font-size:13px">{{ t('app.back_office') }}</div></div>
+      <div><div class="name">{{ t('app.platform_name') }}</div><div class="muted" style="font-size:13px">{{ t('app.back_office') }}</div></div>
     </div>
     <h1 style="margin:0;font-size:26px">{{ t('login.title') }}</h1>
     {% if error %}<p class="notice" role="alert" style="border-color:var(--red);color:var(--red-dark);background:var(--red-soft)">{{ t(error) }}</p>{% endif %}
@@ -23,6 +23,7 @@
     <button class="btn turbo" type="submit" formaction="/login/turbo" formnovalidate>{{ t('login.turbo') }}</button>
     <p class="muted" style="margin:-6px 0 0;font-size:12px;text-align:center">{{ t('login.turbo_hint') }}</p>
     {% endif %}
+    <p class="muted" style="margin:0;font-size:14px;text-align:center">{{ t('login.no_account') }} <a href="/signup">{{ t('login.create_account') }}</a></p>
     <div class="langs" style="gap:8px">
       {% for code in locales %}<a href="/lang/{{ code }}" style="color:var(--ink);border-color:var(--line-2)" aria-current="{{ 'true' if code == locale else 'false' }}">{{ code|upper }}</a>{% endfor %}
     </div>

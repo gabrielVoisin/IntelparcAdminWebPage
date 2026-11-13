@@ -59,6 +59,8 @@ DeviceKind = pg_enum(
 DeviceStatus = pg_enum("device_status", "ok", "fault", "offline")
 EventPriority = pg_enum("event_priority", "alarm", "warning", "info")
 ReportFormat = pg_enum("report_format", "pdf", "xlsx")
+OrganizationKind = pg_enum("organization_kind", "municipality", "state", "property_manager", "owner", "internal")
+ManagementMode = pg_enum("management_mode", "qr_code", "presence_sensor", "smart_barrier")
 
 TS = TIMESTAMP(timezone=True)
 
@@ -76,7 +78,24 @@ class Timestamps:
     updated_at: Mapped[datetime] = mapped_column(TS, server_default=func.now())
 
 
-# --- Sites, zones, bays --------------------------------------------------
+# --- Accounts (schema v5) -------------------------------------------------
+class Organization(UUIDPk, Timestamps, Base):
+    """An account that owns parkings: commune, canton/State, property manager, owner (or DR Automation itself)."""
+
+    __tablename__ = "organizations"
+    name: Mapped[str] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(OrganizationKind, default="owner")
+    email: Mapped[str | None] = mapped_column(Text)
+    phone: Mapped[str | None] = mapped_column(Text)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    bank_holder: Mapped[str | None] = mapped_column(Text)
+    bank_iban: Mapped[str | None] = mapped_column(Text)
+    bank_bic: Mapped[str | None] = mapped_column(Text)
+    bank_address: Mapped[str | None] = mapped_column(Text)
+    bank_updated_at: Mapped[datetime | None] = mapped_column(TS)
+
+
+# --- Sites (the "parking" object), zones, bays ---------------------------
 class Site(UUIDPk, Timestamps, Base):
     __tablename__ = "sites"
     code: Mapped[str] = mapped_column(Text, unique=True)
@@ -89,7 +108,12 @@ class Site(UUIDPk, Timestamps, Base):
     latitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
     longitude: Mapped[float | None] = mapped_column(Numeric(9, 6))
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Multi-account platform (schema v5)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"))
+    management_mode: Mapped[str] = mapped_column(ManagementMode, default="qr_code")
+    capacity: Mapped[int] = mapped_column(Integer, default=0)
 
+    organization: Mapped[Organization | None] = relationship()
     zones: Mapped[list[Zone]] = relationship(back_populates="site", order_by="Zone.sort_order")
 
 
@@ -141,7 +165,10 @@ class StaffUser(UUIDPk, Timestamps, Base):
     totp_secret: Mapped[str | None] = mapped_column(Text)
     invited_at: Mapped[datetime | None] = mapped_column(TS)
     last_login_at: Mapped[datetime | None] = mapped_column(TS)
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("organizations.id", ondelete="CASCADE"))
+    is_superuser: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    organization: Mapped[Organization | None] = relationship()
     sites: Mapped[list[Site]] = relationship(secondary="staff_site_access")
 
 
@@ -179,6 +206,8 @@ class Customer(UUIDPk, Timestamps, Base):
     password_hash: Mapped[str | None] = mapped_column(Text)
     phone_verified_at: Mapped[datetime | None] = mapped_column(TS)
     last_login_at: Mapped[datetime | None] = mapped_column(TS)
+    # Account that created this customer at the desk (schema v5); NULL for drivers who signed up in the app
+    organization_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("organizations.id", ondelete="SET NULL"))
 
     vehicles: Mapped[list[Vehicle]] = relationship(back_populates="customer")
 
@@ -373,6 +402,9 @@ class Device(UUIDPk, Timestamps, Base):
     live_url: Mapped[str | None] = mapped_column(Text)            # sensor's own HTTP service (live view)
     status: Mapped[str] = mapped_column(DeviceStatus, default="ok")
     last_seen_at: Mapped[datetime | None] = mapped_column(TS)
+    # QR code of a smart barrier (schema v5): booking a place of the parking from the barrier
+    reference: Mapped[str | None] = mapped_column(Text, unique=True)
+    qr_generated_at: Mapped[datetime | None] = mapped_column(TS)
 
     controller: Mapped[Controller] = relationship(back_populates="devices")
 

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}{{ t('nav.admin') }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <div><div class="eyebrow">{{ t('admin.subtitle') }}</div><h1>{{ t('nav.admin') }}</h1></div>
+  <a class="btn primary" href="/parkings/new">+ {{ t('parkings.new') }}</a>
+</header>
+
+<section class="kpis" aria-label="{{ t('admin.summary') }}">
+  <div class="kpi"><span class="label">{{ t('admin.accounts') }}</span><span class="value">{{ organizations|length }}</span></div>
+  <div class="kpi"><span class="label">{{ t('admin.parkings') }}</span><span class="value">{{ parkings|length }}</span></div>
+  <div class="kpi"><span class="label">{{ t('parkings.places') }}</span><span class="value">{{ parkings|sum(attribute='places') }}</span></div>
+  <div class="kpi"><span class="label">{{ t('admin.suspended') }}</span><span class="value">{{ organizations|rejectattr('is_active')|list|length }}</span></div>
+</section>
+
+<section class="card" aria-labelledby="orgs">
+  <div><h2 id="orgs">{{ t('admin.accounts') }}</h2><span class="muted" style="font-size:14px">{{ t('admin.accounts_help') }}</span></div>
+  <div class="table-wrap"><table class="data" style="min-width:1040px">
+    <thead><tr><th>{{ t('admin.account') }}</th><th>{{ t('signup.kind') }}</th><th>{{ t('admin.parkings') }}</th><th>{{ t('nav.users') }}</th><th>{{ t('nav.bank') }}</th><th>{{ t('col.status') }}</th><th></th></tr></thead>
+    <tbody>
+    {% for o in organizations %}
+      <tr {% if not o.is_active %}class="muted"{% endif %}>
+        <td><b>{{ o.name }}</b><span class="sub-line">{{ o.email or '' }} · {{ fdate(o.created_at) }}</span></td>
+        <td>{{ t('org_kind.' ~ o.kind) }}</td><td class="mono">{{ o.parkings }}</td><td class="mono">{{ o.members }}</td>
+        <td>{% if o.bank_ok %}<span class="badge dark">{{ t('bank.ok') }}</span>{% else %}<span class="badge soft">{{ t('bank.missing') }}</span>{% endif %}</td>
+        <td><span class="badge {{ 'dark' if o.is_active else 'red' }}">{{ t('common.active') if o.is_active else t('admin.suspended_one') }}</span></td>
+        <td style="text-align:right;white-space:nowrap">
+          {% if o.kind != 'internal' %}
+            {% if o.is_active %}<button class="btn small" data-api="PATCH /api/v1/admin/organizations/{{ o.id }}" data-body='{"is_active": false}' data-confirm="{{ t('admin.suspend_confirm', name=o.name) }}">{{ t('admin.suspend') }}</button>
+            {% else %}<button class="btn small" data-api="PATCH /api/v1/admin/organizations/{{ o.id }}" data-body='{"is_active": true}'>{{ t('admin.reactivate') }}</button>{% endif %}
+            <button class="btn small danger-outline" data-api="DELETE /api/v1/admin/organizations/{{ o.id }}" data-confirm-name="{{ o.name }}" data-success="{{ t('admin.deleted') }}">{{ t('action.delete') }}</button>
+          {% else %}<span class="badge outline">{{ t('admin.internal') }}</span>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+
+<section class="card" aria-labelledby="all-parkings">
+  <div><h2 id="all-parkings">{{ t('admin.all_parkings') }}</h2><span class="muted" style="font-size:14px">{{ t('admin.all_parkings_help') }}</span></div>
+  <div class="table-wrap"><table class="data" style="min-width:1040px">
+    <thead><tr><th>{{ t('col.site') }}</th><th>{{ t('admin.account') }}</th><th>{{ t('parkings.mode') }}</th><th>{{ t('parkings.places') }}</th><th>{{ t('parkings.free') }}</th><th></th></tr></thead>
+    <tbody>
+    {% for p in parkings %}
+      <tr><td><b>{{ p.name }}</b><span class="sub-line">{{ p.code }} · {{ p.city or '' }}</span></td><td>{{ p.organization_name or '—' }}</td>
+        <td>{{ t('mode.' ~ p.management_mode) }}</td><td class="mono">{{ p.places }}</td><td class="mono">{{ p.free_bays }}</td>
+        <td style="text-align:right;white-space:nowrap"><a class="btn small" href="/parkings/{{ p.id }}/open">{{ t('parkings.open') }}</a>
+          <button class="btn small danger-outline" data-api="DELETE /api/v1/parkings/{{ p.id }}" data-confirm-name="{{ p.name }}" data-success="{{ t('parkings.deleted') }}">{{ t('action.delete') }}</button></td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+</section>
+{% endblock %}

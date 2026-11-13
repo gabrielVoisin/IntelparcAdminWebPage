@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="{{ locale }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ t('signup.title') }} · {{ t('app.platform_name') }}</title>
+<link rel="stylesheet" href="/static/css/app.css?v={{ asset_v }}">
+<script>
+  window.PK_I18N = { errors: {
+{%- for code in ['invalid_email', 'password_too_short', 'email_already_used'] %}
+    {{ code }}: {{ t('error.' ~ code)|tojson }},
+{%- endfor %}
+  } };
+</script>
+<script src="/static/js/app.js?v={{ asset_v }}" defer></script>
+</head>
+<body>
+<div class="login">
+  <form class="card" style="max-width:560px" data-api-form="POST /api/v1/account/signup" data-flat data-redirect="/parkings/new">
+    <div class="brand" style="padding:0">
+      <div class="logo" aria-hidden="true" style="color:#fff">P</div>
+      <div><div class="name">{{ t('app.platform_name') }}</div><div class="muted" style="font-size:13px">{{ t('signup.subtitle') }}</div></div>
+    </div>
+    <h1 style="margin:0;font-size:26px">{{ t('signup.title') }}</h1>
+    <p class="muted" style="margin:0;font-size:14px">{{ t('signup.help') }}</p>
+    <div class="form-grid">
+      <label class="field full">{{ t('signup.organization') }}<input class="input" name="organization_name" required minlength="2" maxlength="120" placeholder="{{ t('signup.organization_placeholder') }}"></label>
+      <label class="field full">{{ t('signup.kind') }}
+        <select class="input" name="kind">
+          {% for k in ['municipality', 'state', 'property_manager', 'owner'] %}<option value="{{ k }}" {% if k == 'municipality' %}selected{% endif %}>{{ t('org_kind.' ~ k) }}</option>{% endfor %}
+        </select></label>
+      <label class="field">{{ t('team.full_name') }}<input class="input" name="full_name" required minlength="2" maxlength="120" autocomplete="name"></label>
+      <label class="field">{{ t('signup.phone') }}<input class="input" name="phone" type="tel" maxlength="40" autocomplete="tel" data-skip-empty></label>
+      <label class="field full">{{ t('login.email') }}<input class="input" type="email" name="email" required autocomplete="email"></label>
+      <label class="field full">{{ t('login.password') }}<input class="input" type="password" name="password" required minlength="12" autocomplete="new-password">
+        <span class="help">{{ t('signup.password_help') }}</span></label>
+    </div>
+    <input type="hidden" name="locale" value="{{ locale }}">
+    <button class="btn primary" type="submit">{{ t('signup.submit') }}</button>
+    <p class="muted" style="margin:0;font-size:14px;text-align:center">{{ t('signup.have_account') }} <a href="/login">{{ t('login.submit') }}</a></p>
+    <div class="langs" style="gap:8px">
+      {% for code in locales %}<a href="/lang/{{ code }}" style="color:var(--ink);border-color:var(--line-2)" aria-current="{{ 'true' if code == locale else 'false' }}">{{ code|upper }}</a>{% endfor %}
+    </div>
+  </form>
+</div>
+</body>
+</html>

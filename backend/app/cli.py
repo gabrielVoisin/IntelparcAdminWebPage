@@ -21,7 +21,7 @@ from pathlib import Path
 from sqlalchemy import select
 
 from app.db.session import SessionLocal, engine
-from app.models import Controller, Site, StaffUser
+from app.models import Controller, Organization, Site, StaffUser
 from app.security import hash_password, new_controller_key
 
 SQL_DIR = Path(__file__).parent / "db" / "sql"
@@ -38,6 +38,8 @@ def seed_demo() -> None:
     _run_sql("seed_demo.sql")
     _run_sql("demo_sensors.sql")
     _run_sql("demo_clear_traffic.sql")
+    with engine.begin() as conn:  # the prototype data belongs to the DR Automation account (super user)
+        conn.exec_driver_sql("SELECT attach_orphans_to_internal()")
     print("Demo data loaded. Staff password: ChangeMe-2026! (change it).")
 
 
@@ -60,15 +62,16 @@ def simulated_sensors(state: str) -> None:
         print("Simulated sensors off: their bays are free and the sensors are not configured any more.")
 
 
-def create_admin(email: str, full_name: str, locale: str) -> None:
+def create_admin(email: str, full_name: str, locale: str, superuser: bool = False) -> None:
     password = getpass.getpass("Password (12+ characters): ")
     if len(password) < 12:
         sys.exit("Password too short.")
     with SessionLocal.begin() as db:
         if db.scalar(select(StaffUser).where(StaffUser.email == email.lower())):
             sys.exit("This email already exists.")
-        db.add(StaffUser(email=email.lower(), full_name=full_name, role="admin", locale=locale,
-                         password_hash=hash_password(password)))
+        org_id = db.scalar(select(Organization.id).where(Organization.kind == "internal").limit(1))
+        db.add(StaffUser(email=email.lower(), full_name=full_name, role="admin", locale=locale, organization_id=org_id,
+                         is_superuser=superuser, password_hash=hash_password(password)))
     print(f"Administrator {email} created.")
 
 
@@ -146,6 +149,7 @@ def main() -> None:
     p.add_argument("email")
     p.add_argument("full_name")
     p.add_argument("--locale", default="fr", choices=["fr", "en", "de"])
+    p.add_argument("--superuser", action="store_true", help="DR Automation super user (every account)")
     p = sub.add_parser("new-controller")
     p.add_argument("site_code")
     p.add_argument("code")
@@ -165,7 +169,7 @@ def main() -> None:
     elif args.cmd == "simulated-sensors":
         simulated_sensors(args.state)
     elif args.cmd == "create-admin":
-        create_admin(args.email, args.full_name, args.locale)
+        create_admin(args.email, args.full_name, args.locale, args.superuser)
     elif args.cmd == "bay-labels":
         bay_labels(args.site_code, args.zone_code, args.out)
     elif args.cmd == "ble-public-key":

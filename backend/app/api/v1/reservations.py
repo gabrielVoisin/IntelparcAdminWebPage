@@ -37,9 +37,9 @@ def _one(db: Session, reservation_id: uuid.UUID) -> ReservationOut:
     return _to_out(row)
 
 
-def _price(db: Session, start: datetime, end: datetime) -> int:
-    tariffs = queries.tariffs(db)["current"]
-    values = settings_store.get_all(db)
+def _price(db: Session, start: datetime, end: datetime, site_id=None) -> int:
+    tariffs = (queries.effective_tariffs(db, site_id) if site_id else queries.tariffs(db))["current"]
+    values = settings_store.get_all(db, site_id)
     return price_for_stay(
         start, end, tariffs["hourly"]["amount_cents"], tariffs["daily"]["amount_cents"],
         str(values["payments.billing_mode"]), 0,
@@ -71,7 +71,7 @@ def create(body: ReservationIn, user: StaffUser = Depends(require_permission("ma
     check_site_access(user, bay.zone.site_id)
     if bay.admin_state == "blocked":
         raise HTTPException(409, "bay_blocked")
-    res = Reservation(**body.model_dump(), price_cents=_price(db, body.starts_at, body.ends_at))
+    res = Reservation(**body.model_dump(), price_cents=_price(db, body.starts_at, body.ends_at, bay.zone.site_id))
     db.add(res)
     try:
         db.flush()
@@ -97,7 +97,7 @@ def update(reservation_id: uuid.UUID, body: ReservationPatch, user: StaffUser = 
         setattr(res, field, value)
     if res.ends_at <= res.starts_at:
         raise HTTPException(422, "ends_before_start")
-    res.price_cents = _price(db, res.starts_at, res.ends_at)
+    res.price_cents = _price(db, res.starts_at, res.ends_at, res.bay.zone.site_id)
     try:
         db.flush()
     except IntegrityError as exc:
@@ -113,7 +113,7 @@ def extend(reservation_id: uuid.UUID, body: ExtendIn, user: StaffUser = Depends(
     if res.status not in ("confirmed", "active"):
         raise HTTPException(409, "reservation_closed")
     res.ends_at = max(res.ends_at, datetime.now(UTC)) + timedelta(minutes=body.minutes)
-    res.price_cents = _price(db, res.starts_at, res.ends_at)
+    res.price_cents = _price(db, res.starts_at, res.ends_at, res.bay.zone.site_id)
     try:
         db.flush()
     except IntegrityError as exc:

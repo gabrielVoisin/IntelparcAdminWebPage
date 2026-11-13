@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.deps import get_current_user, require_permission
+from app.deps import allowed_site_ids, get_current_user, require_permission
 from app.models import Customer, StaffUser, Vehicle
 from app.schemas import CustomerIn, CustomerOut, CustomerPatch, CustomerProfileOut, VehicleIn, VehicleOut
 from app.services import queries
@@ -20,12 +20,18 @@ router = APIRouter(prefix="/customers", tags=["customers"])
 @router.get("/search")
 def search(q: str = Query(..., min_length=2, description="First name, last name or plate"),
            user: StaffUser = Depends(get_current_user), db: Session = Depends(get_db)) -> list[dict]:
-    return queries.customer_search(db, q)
+    return queries.customer_search(db, q, site_ids=allowed_site_ids(user), org_id=user.organization_id)
+
+
+def _visible_or_404(db: Session, user: StaffUser, customer_id: uuid.UUID) -> None:
+    if not queries.customer_visible(db, customer_id, allowed_site_ids(user), user.organization_id):
+        raise HTTPException(404, "customer_not_found")
 
 
 @router.get("/{customer_id}", response_model=CustomerProfileOut)
 def profile(customer_id: uuid.UUID, user: StaffUser = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
-    data = queries.customer_profile(db, customer_id)
+    _visible_or_404(db, user, customer_id)
+    data = queries.customer_profile(db, customer_id, allowed_site_ids(user))
     if data is None:
         raise HTTPException(404, "customer_not_found")
     return data
@@ -34,7 +40,7 @@ def profile(customer_id: uuid.UUID, user: StaffUser = Depends(get_current_user),
 @router.post("", response_model=CustomerOut, status_code=201)
 def create(body: CustomerIn, user: StaffUser = Depends(require_permission("edit_customers")), db: Session = Depends(get_db)) -> Customer:
     next_num = (db.scalar(select(func.count(Customer.id))) or 0) + 1
-    customer = Customer(reference=f"C-{next_num:05d}", **body.model_dump())
+    customer = Customer(reference=f"C-{next_num:05d}", organization_id=user.organization_id, **body.model_dump())
     db.add(customer)
     db.flush()
     audit(db, "customer.create", "customers", customer.id, actor_id=user.id)
@@ -45,6 +51,7 @@ def create(body: CustomerIn, user: StaffUser = Depends(require_permission("edit_
 @router.patch("/{customer_id}", response_model=CustomerOut)
 def update(customer_id: uuid.UUID, body: CustomerPatch, user: StaffUser = Depends(require_permission("edit_customers")),
            db: Session = Depends(get_db)) -> Customer:
+    _visible_or_404(db, user, customer_id)
     customer = db.get(Customer, customer_id)
     if customer is None:
         raise HTTPException(404, "customer_not_found")
@@ -60,6 +67,7 @@ def update(customer_id: uuid.UUID, body: CustomerPatch, user: StaffUser = Depend
 @router.post("/{customer_id}/vehicles", response_model=VehicleOut, status_code=201)
 def add_vehicle(customer_id: uuid.UUID, body: VehicleIn, user: StaffUser = Depends(require_permission("edit_customers")),
                 db: Session = Depends(get_db)) -> Vehicle:
+    _visible_or_404(db, user, customer_id)
     if db.get(Customer, customer_id) is None:
         raise HTTPException(404, "customer_not_found")
     vehicle = Vehicle(customer_id=customer_id, **body.model_dump())
@@ -76,6 +84,7 @@ def add_vehicle(customer_id: uuid.UUID, body: VehicleIn, user: StaffUser = Depen
 @router.delete("/{customer_id}/vehicles/{vehicle_id}", status_code=204)
 def remove_vehicle(customer_id: uuid.UUID, vehicle_id: uuid.UUID, user: StaffUser = Depends(require_permission("edit_customers")),
                    db: Session = Depends(get_db)) -> None:
+    _visible_or_404(db, user, customer_id)
     vehicle = db.get(Vehicle, vehicle_id)
     if vehicle is None or vehicle.customer_id != customer_id:
         raise HTTPException(404, "vehicle_not_found")

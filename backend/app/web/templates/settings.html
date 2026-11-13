@@ -30,28 +30,40 @@
 
 <div class="split">
   <nav class="card" style="flex:1 1 220px;padding:8px;gap:2px" aria-label="{{ t('settings.sections') }}">
-    {% for key in ['general', 'parkings', 'control', 'payments', 'notifications', 'security'] %}
+    {% for key in sections %}
       <a href="/settings?section={{ key }}" class="site-row {{ 'on' if section == key else '' }}" style="border:0;min-height:56px;{{ 'background:var(--ink);color:#fff' if section == key else '' }}" aria-current="{{ 'page' if section == key else 'false' }}">
         <span><b style="display:block">{{ t('settings.' ~ key) }}</b><span style="font-size:12px;{{ 'color:#D4D6DB' if section == key else 'color:var(--muted)' }}">{{ t('settings.' ~ key ~ '_sub') }}</span></span></a>
     {% endfor %}
   </nav>
 
   <div class="wide" style="display:flex;flex-direction:column;gap:24px">
-  {% if section == 'parkings' %}
-    <section class="card">
-      <div><h2>{{ t('settings.parkings') }}</h2><span class="muted" style="font-size:14px">{{ t('settings.parkings_help') }}</span></div>
-      <div class="table-wrap"><table class="data">
-        <thead><tr><th>{{ t('col.site') }}</th><th>{{ t('col.bays') }}</th><th>{{ t('col.free') }}</th><th>{{ t('col.status') }}</th><th></th></tr></thead>
-        <tbody>
-        {% for s in sites %}
-          <tr><td><b>{{ s.name }}</b><span class="sub-line">{{ s.address_line or '' }} {{ s.city or '' }}</span></td>
-            <td class="mono">{{ s.total_bays }}</td><td class="mono">{{ s.free_bays }}</td>
-            <td><span class="badge {{ 'dark' if s.is_active else 'soft' }}">{{ t('common.active') if s.is_active else t('common.disabled') }}</span></td>
-            <td style="text-align:right">{% if can('change_settings') %}<button class="btn small" data-api="PATCH /api/v1/sites/{{ s.id }}" data-body='{"is_active": {{ 'false' if s.is_active else 'true' }}}'>{{ t('action.disable') if s.is_active else t('action.enable') }}</button>{% endif %}</td></tr>
-        {% endfor %}
-        </tbody>
-      </table></div>
+  {% if section == 'parking' %}
+    <form class="card" data-api-form="PATCH /api/v1/parkings/{{ parking.id }}" data-flat data-success="{{ t('settings.saved') }}">
+      <div><h2>{{ t('settings.parking') }}</h2><span class="muted" style="font-size:14px">{{ t('settings.parking_help') }}</span></div>
+      <div class="form-grid">
+        <label class="field">{{ t('parkings.name') }}<input class="input" name="name" required minlength="2" maxlength="120" value="{{ parking.name }}" {{ '' if can('change_settings') else 'readonly' }}></label>
+        <label class="field">{{ t('parkings.capacity') }}<input class="input" name="capacity" type="number" min="1" max="2000" value="{{ parking.capacity or parking.places }}" {{ '' if can('change_settings') else 'readonly' }}></label>
+        <label class="field full">{{ t('parkings.address') }}<input class="input" name="address_line" maxlength="200" value="{{ parking.address_line or '' }}" {{ '' if can('change_settings') else 'readonly' }}></label>
+        <label class="field">{{ t('parkings.postcode') }}<input class="input" name="postcode" maxlength="20" value="{{ parking.postcode or '' }}" {{ '' if can('change_settings') else 'readonly' }}></label>
+        <label class="field">{{ t('parkings.city') }}<input class="input" name="city" maxlength="120" value="{{ parking.city or '' }}" {{ '' if can('change_settings') else 'readonly' }}></label>
+        <label class="field">{{ t('qr.latitude') }}<input class="input mono" name="latitude" type="number" step="0.000001" min="-90" max="90" value="{{ parking.latitude if parking.latitude is not none else '' }}" {{ '' if can('change_settings') else 'readonly' }}></label>
+        <label class="field">{{ t('qr.longitude') }}<input class="input mono" name="longitude" type="number" step="0.000001" min="-180" max="180" value="{{ parking.longitude if parking.longitude is not none else '' }}" {{ '' if can('change_settings') else 'readonly' }}></label>
+        <label class="field">{{ t('parkings.mode') }}<input class="input" value="{{ t('mode.' ~ parking.management_mode) }}" readonly disabled><span class="help">{{ t('parkings.mode_fixed') }}</span></label>
+        <label class="field">{{ t('parkings.code') }}<input class="input mono" value="{{ parking.code }}" readonly disabled><span class="help">{{ t('parkings.code_help') }}</span></label>
+      </div>
+      {% if can('change_settings') %}
+      <div class="row" style="justify-content:space-between;flex-wrap:wrap">
+        <button class="btn primary" type="submit">{{ t('action.save') }}</button>
+        <button class="btn" type="button" data-api="PATCH /api/v1/parkings/{{ parking.id }}" data-body='{"is_active": {{ 'false' if parking.is_active else 'true' }}}'>{{ t('parkings.disable') if parking.is_active else t('parkings.enable') }}</button>
+      </div>
+      {% endif %}
+    </form>
+    {% if user.is_superuser %}
+    <section class="card alert">
+      <div><h2>{{ t('parkings.delete_title') }}</h2><span class="muted" style="font-size:14px">{{ t('parkings.delete_help') }}</span></div>
+      <div><button class="btn danger" data-api="DELETE /api/v1/parkings/{{ parking.id }}" data-confirm-name="{{ parking.name }}" data-redirect="/parkings" data-success="{{ t('parkings.deleted') }}">{{ t('parkings.delete') }}</button></div>
     </section>
+    {% endif %}
   {% elif section == 'notifications' %}
     <section class="card">
       <div><h2>{{ t('settings.notifications') }}</h2><span class="muted" style="font-size:14px">{{ t('settings.notifications_help') }}</span></div>
@@ -70,7 +82,7 @@
       </table></div>
     </section>
   {% else %}
-    <form data-api-form="PUT /api/v1/settings" data-wrap="values" data-flat data-dirty-label="{{ t('settings.unsaved') }}" data-success="{{ t('settings.saved') }}" style="display:flex;flex-direction:column;gap:24px">
+    <form data-api-form="PUT /api/v1/settings{{ '' if section == 'security' else '?site_id=' ~ parking.id }}" data-wrap="values" data-flat data-dirty-label="{{ t('settings.unsaved') }}" data-success="{{ t('settings.saved') }}" style="display:flex;flex-direction:column;gap:24px">
     {% if section == 'general' %}
       <section class="card"><div><h2>{{ t('settings.identity') }}</h2><span class="muted" style="font-size:14px">{{ t('settings.identity_help') }}</span></div>
         <div class="form-grid">{{ field('general.site_name') }}</div></section>

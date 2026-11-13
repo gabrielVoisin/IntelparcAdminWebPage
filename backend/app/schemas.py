@@ -63,6 +63,8 @@ class StaffOut(ORM):
     locale: Locale
     is_active: bool
     last_login_at: datetime | None = None
+    is_superuser: bool = False
+    organization_id: uuid.UUID | None = None
 
 
 class TokenOut(BaseModel):
@@ -94,6 +96,9 @@ class SiteOut(ORM):
     total_bays: int = 0
     free_bays: int = 0
     occupied_bays: int = 0
+    organization_id: uuid.UUID | None = None
+    management_mode: Literal["qr_code", "presence_sensor", "smart_barrier"] = "qr_code"
+    capacity: int = 0
 
 
 class SitePatch(BaseModel):
@@ -614,3 +619,145 @@ class IngestResult(BaseModel):
     accepted: int
     duplicates: int
     rejected: list[dict] = []
+
+
+# --- Multi-account platform (schema v5) -------------------------------------------------------------
+OrgKind = Literal["municipality", "state", "property_manager", "owner"]
+Mode = Literal["qr_code", "presence_sensor", "smart_barrier"]
+
+
+class SignupIn(BaseModel):
+    organization_name: str = Field(min_length=2, max_length=120)
+    kind: OrgKind = "owner"
+    full_name: str = Field(min_length=2, max_length=120)
+    email: str = Field(min_length=5, max_length=200)
+    phone: str | None = Field(None, max_length=40)
+    password: str = Field(min_length=12, max_length=200)
+    locale: Locale = "fr"
+    client_name: str | None = None
+
+
+class OrganizationOut(ORM):
+    id: uuid.UUID
+    name: str
+    kind: str
+    email: str | None
+    phone: str | None
+    is_active: bool
+    bank_holder: str | None = None
+    bank_iban_masked: str | None = None
+    bank_bic: str | None = None
+    bank_address: str | None = None
+    bank_updated_at: datetime | None = None
+
+
+class OrganizationPatch(BaseModel):
+    name: str | None = Field(None, min_length=2, max_length=120)
+    email: str | None = None
+    phone: str | None = None
+
+
+class BankIn(BaseModel):
+    holder: str = Field(min_length=2, max_length=140)
+    iban: str = Field(min_length=15, max_length=42)
+    bic: str = Field(min_length=8, max_length=11)
+    address: str | None = Field(None, max_length=200)
+
+
+class PayoutOut(BaseModel):
+    month: date
+    site_id: uuid.UUID
+    site_name: str
+    payments: int
+    gross_cents: int
+    fee_cents: int
+    net_cents: int
+    currency: str
+    status: Literal["in_progress", "to_transfer"]
+
+
+class ParkingIn(BaseModel):
+    name: str = Field(min_length=2, max_length=120)
+    capacity: int = Field(ge=1, le=2000)
+    management_mode: Mode
+    address_line: str | None = Field(None, max_length=200)
+    postcode: str | None = Field(None, max_length=20)
+    city: str | None = Field(None, max_length=120)
+    country: str = Field("CH", min_length=2, max_length=2)
+    latitude: float | None = Field(None, ge=-90, le=90)
+    longitude: float | None = Field(None, ge=-180, le=180)
+    organization_id: uuid.UUID | None = Field(None, description="Super user only: the account that owns the parking")
+
+
+class ParkingPatch(BaseModel):
+    name: str | None = Field(None, min_length=2, max_length=120)
+    capacity: int | None = Field(None, ge=1, le=2000)
+    address_line: str | None = None
+    postcode: str | None = None
+    city: str | None = None
+    latitude: float | None = Field(None, ge=-90, le=90)
+    longitude: float | None = Field(None, ge=-180, le=180)
+    is_active: bool | None = None
+
+
+class ParkingOut(SiteOut):
+    organization_name: str | None = None
+    places: int = 0
+    devices: int = 0
+    redirect: str | None = None
+
+
+class DeleteConfirmIn(BaseModel):
+    confirm_name: str = Field(description="Name of the parking or account, typed again by the user")
+
+
+class GeneratePlacesIn(BaseModel):
+    count: int = Field(ge=1, le=500)
+    kind: Literal["standard", "accessible", "ev"] = "standard"
+    rental_status: RentalStatus = "not_rented"
+
+
+class SensorIn(BaseModel):
+    kind: Literal["front", "vertical"] = "front"
+    address: str | None = Field(None, max_length=120, description="Wiring address or IP of the sensor (empty: not configured)")
+    live_url: str | None = Field(None, max_length=300)
+    controller_id: uuid.UUID | None = None
+    bay_kind: Literal["standard", "accessible", "ev"] = "standard"
+
+
+class BarrierIn(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    direction: Literal["entry", "exit"] = "entry"
+    address: str | None = Field(None, max_length=120)
+    controller_id: uuid.UUID | None = None
+
+
+class ControllerNameIn(BaseModel):
+    name: str | None = Field(None, max_length=80)
+
+
+class EquipmentCreatedOut(BaseModel):
+    id: uuid.UUID
+    code: str
+    bay_id: uuid.UUID | None = None
+    bay_number: str | None = None
+    reference: str | None = None
+    controller_id: uuid.UUID
+    controller_code: str
+    api_key: str | None = Field(None, description="Only when a new cabinet was created: shown once, never stored in clear")
+
+
+class AdminOrganizationOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    kind: str
+    email: str | None
+    is_active: bool
+    parkings: int
+    members: int
+    bank_ok: bool
+    created_at: datetime
+
+
+class AdminOrganizationPatch(BaseModel):
+    is_active: bool

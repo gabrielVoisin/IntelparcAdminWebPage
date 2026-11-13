@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}{{ t('nav.team') }}{% endblock %}
+{% block title %}{{ t('nav.users') }}{% endblock %}
 {% block content %}
 <header class="page-head">
-  <div><div class="eyebrow">{{ t('team.subtitle') }}</div><h1>{{ t('nav.team') }}</h1></div>
+  <div><div class="eyebrow">{{ t('team.subtitle') }}</div><h1>{{ t('nav.users') }}</h1></div>
 </header>
 
 <section class="kpis" aria-label="{{ t('team.summary') }}">
@@ -29,7 +29,7 @@
           </select>
           {% else %}{{ t('role.' ~ m.role) }}{% endif %}
         </td>
-        <td>{{ m.site_codes|join(', ') if m.site_codes else t('team.all_sites') }}</td>
+        <td>{{ m.site_names|join(', ') if m.site_names else t('team.all_sites') }}{% if m.is_superuser %} <span class="badge dark">{{ t('role.superuser_short') }}</span>{% endif %}</td>
         <td>{{ fdt(m.last_login_at) if m.last_login_at else t('team.never') }}</td>
         <td><span class="badge {{ 'dashed' if m.pending_invitation else ('dark' if m.is_active else 'soft') }}">{{ t('team.invited') if m.pending_invitation else (t('common.active') if m.is_active else t('team.deactivated')) }}</span></td>
         <td style="text-align:right">

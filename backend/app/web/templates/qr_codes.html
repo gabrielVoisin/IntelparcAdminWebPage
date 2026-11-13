@@ -1,11 +1,26 @@
 {% extends "base.html" %}
-{% block title %}{{ t('nav.qr') }}{% endblock %}
+{% set page_title = t('nav.places_qr') if parking.management_mode == 'qr_code' else t('nav.qr') %}
+{% block title %}{{ page_title }}{% endblock %}
 {% block content %}
-{% set can_edit = user.role in ('admin', 'manager') %}
+{% set can_edit = (user.is_superuser or user.role in ('admin', 'manager')) %}
 <header class="page-head">
-  <div><div class="eyebrow">{{ t('qr.subtitle') }}</div><h1>{{ t('nav.qr') }}</h1></div>
-  {% if can_edit %}<a class="btn primary" href="/qr-codes?new=1">{{ t('qr.new') }}</a>{% endif %}
+  <div><div class="eyebrow">{{ t('qr.subtitle') }}</div><h1>{{ page_title }}</h1></div>
+  {% if can_edit %}<a class="btn" href="/qr-codes?new=1">{{ t('qr.new') }}</a>{% endif %}
 </header>
+
+{% if welcome %}<p class="notice" role="status">{{ t('qr.welcome') }}</p>{% endif %}
+
+{% if can_edit and parking.management_mode == 'qr_code' %}
+<section class="card" aria-labelledby="gen-title">
+  <div><h2 id="gen-title">{{ t('qr.generate_places') }}</h2><span class="muted" style="font-size:14px">{{ t('qr.generate_places_help', n=parking.places) }}</span></div>
+  <form class="form-grid" data-api-form="POST /api/v1/parkings/{{ parking.id }}/places" data-flat data-success="{{ t('qr.places_generated') }}" style="align-items:end">
+    <label class="field">{{ t('qr.how_many') }}<input class="input" type="number" name="count" min="1" max="500" value="10" required></label>
+    <label class="field">{{ t('equipment.bay_kind') }}<select class="input" name="kind">{% for k in ['standard', 'accessible', 'ev'] %}<option value="{{ k }}">{{ t('bay_kind.' ~ k) }}</option>{% endfor %}</select></label>
+    <label class="field">{{ t('qr.rental') }}<select class="input" name="rental_status">{% for r in ['not_rented', 'rented_sublet', 'rented_exclusive'] %}<option value="{{ r }}">{{ t('rental.' ~ r) }}</option>{% endfor %}</select></label>
+    <div><button class="btn primary" type="submit">{{ t('qr.generate_places_btn') }}</button></div>
+  </form>
+</section>
+{% endif %}
 
 {% if show_form and can_edit %}
 {% set f_zone = edit.zone_id if edit else (zones[0][1][0].id if zones and zones[0][1] else '') %}
@@ -115,6 +130,7 @@
         <td style="text-align:right;white-space:nowrap">
           <a class="btn small" href="/qr-codes?bay={{ r.bay_id }}">{{ t('plan.qr') }}</a>
           <a class="btn small" href="/api/v1/bays/{{ r.bay_id }}/qr.pdf" download>PDF</a>
+          {% if can_edit and parking.management_mode == 'qr_code' %}<button class="btn small danger-outline" data-api="DELETE /api/v1/bays/{{ r.bay_id }}" data-confirm="{{ t('qr.delete_confirm', code=r.code) }}">{{ t('action.delete') }}</button>{% endif %}
         </td>
       </tr>
     {% endfor %}

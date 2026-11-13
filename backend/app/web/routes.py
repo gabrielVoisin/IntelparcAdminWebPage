@@ -20,16 +20,17 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
+from app.api.v1.bay_qr import qr_rows
 from app.config import get_settings
 from app.db import get_db
-from app.deps import ACCESS_COOKIE, PERMISSIONS, allowed_site_ids
+from app.deps import ACCESS_COOKIE, PERMISSIONS, allowed_site_ids, user_can_sign_in
 from app.i18n import LOCALE_COOKIE, Translator, negotiate_locale
-from app.models import Controller, Customer, Device, NotificationRule, Site, StaffUser, Zone
+from app.models import Controller, Device, NotificationRule, Organization, Site, StaffUser, Zone
 from app.security import create_access_token, decode_access_token, verify_password
-from app.api.v1.bay_qr import qr_rows
+from app.services import account as account_service
 from app.services import queries, reports, watchdog
 from app.web import formatting as f
 
@@ -38,18 +39,31 @@ templates = Jinja2Templates(directory=Path(__file__).parent / "templates")
 ASSET_VERSION = str(int(max(p.stat().st_mtime for p in (Path(__file__).parent / "static").rglob("*") if p.is_file())))
 router = APIRouter(include_in_schema=False)
 
+SITE_COOKIE = "pk_site"  # the parking the person opened from "Mon compte"
+ALL_MODES = ("qr_code", "presence_sensor", "smart_barrier")
+EQUIPMENT_MODES = ("presence_sensor", "smart_barrier")
+
+# Menu of an opened parking: (key, href, label, management modes where the entry exists)
 NAV = [
-    ("dashboard", "/", "nav.dashboard"),
-    ("plan", "/plan", "nav.plan"),
-    ("qr", "/qr-codes", "nav.qr"),
-    ("reservations", "/reservations", "nav.reservations"),
-    ("subscriptions", "/subscriptions", "nav.subscriptions"),
-    ("customers", "/customers", "nav.customers"),
-    ("pricing", "/pricing", "nav.pricing"),
-    ("reports", "/reports", "nav.reports"),
-    ("settings", "/settings", "nav.settings"),
-    ("team", "/team", "nav.team"),
-    ("devices", "/devices", "nav.devices"),
+    ("dashboard", "/", "nav.dashboard", ALL_MODES),
+    ("plan", "/plan", "nav.plan", ALL_MODES),
+    ("qr", "/qr-codes", "nav.places_qr", ("qr_code",)),
+    ("qr", "/qr-codes", "nav.qr", ("presence_sensor",)),
+    ("equipment", "/equipment", "nav.sensors", ("presence_sensor",)),
+    ("equipment", "/equipment", "nav.barriers", ("smart_barrier",)),
+    ("reservations", "/reservations", "nav.reservations", ALL_MODES),
+    ("subscriptions", "/subscriptions", "nav.subscriptions", ALL_MODES),
+    ("customers", "/customers", "nav.customers", ALL_MODES),
+    ("pricing", "/pricing", "nav.pricing", ALL_MODES),
+    ("reports", "/reports", "nav.reports", ALL_MODES),
+    ("settings", "/settings", "nav.settings", ALL_MODES),
+    ("devices", "/devices", "nav.devices", EQUIPMENT_MODES),
+]
+# Menu of "Mon compte" (no parking needed)
+ACCOUNT_NAV = [
+    ("parkings", "/parkings", "nav.my_parkings"),
+    ("users", "/account/users", "nav.users"),
+    ("bank", "/account/bank", "nav.bank"),
 ]
 
 
@@ -66,25 +80,52 @@ def current_user(request: Request, db: Session) -> StaffUser:
     except jwt.InvalidTokenError as exc:
         raise LoginRequired from exc
     user = db.get(StaffUser, uuid.UUID(payload["sub"]))
-    if user is None or not user.is_active:
+    if user is None or not user_can_sign_in(user):
         raise LoginRequired
     return user
+
+
+def current_parking(request: Request, db: Session, user: StaffUser) -> dict | None:
+    """The parking opened from "Mon compte" (cookie pk_site), if this person may still see it.
+    A person whose account has a single parking does not need to choose it."""
+    allowed = allowed_site_ids(user)
+    raw = request.cookies.get(SITE_COOKIE)
+    try:
+        site_id = uuid.UUID(raw) if raw else None
+    except ValueError:
+        site_id = None
+    if site_id is not None and (allowed is None or site_id in allowed):
+        rows = queries.sites(db, {site_id})
+        if rows:
+            return rows[0]
+    if allowed is not None and len(allowed) == 1:
+        rows = queries.sites(db, allowed)
+        return rows[0] if rows else None
+    return None
 
 
 def render(request: Request, template: str, user: StaffUser | None, active: str = "", **ctx: object) -> HTMLResponse:
     locale = negotiate_locale(request, user.locale if user else None)
     t = Translator(locale)
+    parking = getattr(request.state, "parking", None)
+    db = getattr(request.state, "db", None)
+    my_parkings = queries.sites(db, allowed_site_ids(user)) if user is not None and db is not None else []
+    default_currency = (queries.settings(db, parking["id"]).get("general.currency") if parking and db is not None else None) or "CHF"
     context = {
         "request": request,
         "t": t,
         "locale": locale,
         "locales": get_settings().supported_locales,
         "user": user,
-        "nav": NAV,
+        "nav": [(k, h, label) for k, h, label, modes in NAV if parking and parking["management_mode"] in modes],
+        "account_nav": ACCOUNT_NAV + ([("admin", "/admin", "nav.admin")] if user is not None and user.is_superuser else []),
+        "parking": parking,
+        "my_parkings": my_parkings,
+        "organization": user.organization if user is not None else None,
         "active": active,
         "now": datetime.now(UTC),
-        "can": (lambda perm: user is not None and user.role in PERMISSIONS[perm]),
-        "money": lambda cents, currency="EUR", decimals=None: f.fmt_money(cents, locale, currency, decimals),
+        "can": (lambda perm: user is not None and (user.is_superuser or user.role in PERMISSIONS[perm])),
+        "money": lambda cents, currency=None, decimals=None: f.fmt_money(cents, locale, currency or default_currency, decimals),
         "fdate": lambda v: f.fmt_date(v, locale),
         "fdt": lambda v: f.fmt_datetime(v, locale),
         "ftime": f.fmt_time,
@@ -100,13 +141,35 @@ def render(request: Request, template: str, user: StaffUser | None, active: str 
 
 
 def page(handler):
-    """Decorator: redirect to /login when the cookie is missing or expired."""
+    """Decorator of the pages of a parking: redirect to /login when the cookie is missing or expired, and to
+    "Mes parkings" when no parking is opened. The handler receives the opened parking (a row of queries.sites)."""
 
     def wrapper(request: Request, db: Session = Depends(get_db)) -> Response:
         try:
             user = current_user(request, db)
         except LoginRequired:
             return RedirectResponse(f"/login?next={request.url.path}", status_code=303)
+        request.state.db = db
+        parking = current_parking(request, db, user)
+        if parking is None:
+            return RedirectResponse("/parkings", status_code=303)
+        request.state.parking = parking
+        return handler(request, db, user, parking)
+
+    wrapper.__name__ = handler.__name__
+    return wrapper
+
+
+def account_page(handler):
+    """Decorator of the "Mon compte" pages: signed in, no parking needed."""
+
+    def wrapper(request: Request, db: Session = Depends(get_db)) -> Response:
+        try:
+            user = current_user(request, db)
+        except LoginRequired:
+            return RedirectResponse(f"/login?next={request.url.path}", status_code=303)
+        request.state.db = db
+        request.state.parking = current_parking(request, db, user)
         return handler(request, db, user)
 
     wrapper.__name__ = handler.__name__
@@ -117,6 +180,12 @@ def page(handler):
 @router.get("/login", response_class=HTMLResponse)
 def login_page(request: Request, next: str = "/") -> HTMLResponse:
     return render(request, "login.html", None, next=next, error=None, turbo=get_settings().turbo_login)
+
+
+@router.get("/signup", response_class=HTMLResponse)
+def signup_page(request: Request) -> HTMLResponse:
+    """Public sign-up: commune, State, property manager or owner. The creator is the account's administrator."""
+    return render(request, "signup.html", None)
 
 
 def _signed_in(user: StaffUser, next: str) -> Response:
@@ -135,15 +204,17 @@ def login_submit(request: Request, email: str = Form(...), password: str = Form(
     user = db.scalar(select(StaffUser).where(func.lower(StaffUser.email) == email.strip().lower()))
     if user is None or not user.is_active or not verify_password(password, user.password_hash):
         return render(request, "login.html", None, next=next, error="login.error", turbo=get_settings().turbo_login)
+    if not user_can_sign_in(user):
+        return render(request, "login.html", None, next=next, error="login.suspended", turbo=get_settings().turbo_login)
     return _signed_in(user, next)
 
 
 @router.post("/login/turbo")
 def login_turbo(next: str = Form("/"), db: Session = Depends(get_db)) -> Response:
-    """TEST ONLY (TURBO_LOGIN=true): sign in as the first active administrator, without a password."""
+    """TEST ONLY (TURBO_LOGIN=true): sign in as the super user (DR Automation), without a password."""
     if not get_settings().turbo_login:
         return Response(status_code=404)
-    user = db.scalar(select(StaffUser).where(StaffUser.role == "admin", StaffUser.is_active)
+    user = db.scalar(select(StaffUser).where(StaffUser.is_superuser, StaffUser.is_active)
                      .order_by(StaffUser.created_at).limit(1))
     if user is None:
         return RedirectResponse("/login", status_code=303)
@@ -154,6 +225,7 @@ def login_turbo(next: str = Form("/"), db: Session = Depends(get_db)) -> Respons
 def logout() -> Response:
     response = RedirectResponse("/login", status_code=303)
     response.delete_cookie(ACCESS_COOKIE)
+    response.delete_cookie(SITE_COOKIE)
     return response
 
 
@@ -167,46 +239,139 @@ def set_language(code: str, request: Request) -> Response:
 
 
 # --- Helpers ------------------------------------------------------------------------------
-def _outdoor_zone(db: Session, site_code: str = "P1") -> Zone | None:
-    return db.scalar(select(Zone).join(Site, Site.id == Zone.site_id).where(Site.code == site_code, Zone.code == "EXT"))
+def _main_zone(db: Session, site_id: uuid.UUID) -> Zone | None:
+    """The zone drawn on the dashboard: the outdoor zone of the prototype, else the parking's first zone."""
+    return (db.scalar(select(Zone).where(Zone.site_id == site_id, Zone.code == "EXT"))
+            or db.scalar(select(Zone).where(Zone.site_id == site_id).order_by(Zone.sort_order, Zone.code).limit(1)))
+
+
+def _uuid(value: str | None) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(value) if value else None
+    except ValueError:
+        return None
+
+
+# --- Mon compte: parkings, opening a parking, users, bank details, super user console ----------
+@router.get("/parkings", response_class=HTMLResponse)
+@account_page
+def parkings_page(request: Request, db: Session, user: StaffUser) -> HTMLResponse:
+    """Mes parkings: every parking of the account (of the platform for the super user)."""
+    rows = queries.sites(db, allowed_site_ids(user))
+    return render(request, "parkings.html", user, "parkings", parkings=rows,
+                  can_create=user.is_superuser or user.role in ("admin", "manager"))
+
+
+@router.get("/parkings/new", response_class=HTMLResponse)
+@account_page
+def parking_new(request: Request, db: Session, user: StaffUser) -> HTMLResponse:
+    orgs = db.scalars(select(Organization).order_by(Organization.name)).all() if user.is_superuser else []
+    return render(request, "parking_new.html", user, "parkings", organizations=orgs,
+                  mode=request.query_params.get("mode", "qr_code"))
+
+
+@router.get("/parkings/{site_id}/open")
+def parking_open(site_id: uuid.UUID, request: Request, welcome: int = 0, db: Session = Depends(get_db)) -> Response:
+    """Open a parking: every page of the back office then works on this parking."""
+    try:
+        user = current_user(request, db)
+    except LoginRequired:
+        return RedirectResponse(f"/login?next={request.url.path}", status_code=303)
+    allowed = allowed_site_ids(user)
+    site = db.get(Site, site_id)
+    if site is None or (allowed is not None and site_id not in allowed):
+        return RedirectResponse("/parkings", status_code=303)
+    target = "/"
+    if welcome:
+        target = "/qr-codes?welcome=1" if site.management_mode == "qr_code" else "/equipment?welcome=1"
+    response = RedirectResponse(target, status_code=303)
+    response.set_cookie(SITE_COOKIE, str(site.id), max_age=365 * 24 * 3600, httponly=True, samesite="lax",
+                        secure=get_settings().cookie_secure)
+    return response
+
+
+@router.get("/account", response_class=HTMLResponse)
+@account_page
+def account_home(request: Request, db: Session, user: StaffUser) -> Response:
+    return RedirectResponse("/parkings", status_code=303)
+
+
+@router.get("/account/users", response_class=HTMLResponse)
+@account_page
+def account_users(request: Request, db: Session, user: StaffUser) -> HTMLResponse:
+    """Utilisateurs of the account (formerly "Équipe de gestion")."""
+    members = queries.team(db, user.organization_id)
+    return render(
+        request, "team.html", user, "users",
+        members=members, permissions=PERMISSIONS, sites=queries.sites(db, allowed_site_ids(user)),
+        stats={
+            "active": sum(1 for m in members if m["is_active"] and not m["pending_invitation"]),
+            "admins": sum(1 for m in members if m["role"] == "admin" and m["is_active"]),
+            "agents": sum(1 for m in members if m["role"] == "agent" and m["is_active"]),
+            "pending": sum(1 for m in members if m["pending_invitation"]),
+        },
+    )
+
+
+@router.get("/team")
+def team_moved() -> Response:
+    return RedirectResponse("/account/users", status_code=301)
+
+
+@router.get("/account/bank", response_class=HTMLResponse)
+@account_page
+def account_bank(request: Request, db: Session, user: StaffUser) -> HTMLResponse:
+    """Account details, bank details (IBAN, BIC) and the monthly statements of the transfers."""
+    org = user.organization
+    payouts = account_service.payouts(db, org.id) if org is not None else []
+    months: dict = {}
+    for p in payouts:
+        months.setdefault(p["month"], []).append(p)
+    return render(request, "account_bank.html", user, "bank", org=account_service.organization_out(org) if org else None,
+                  months=sorted(months.items(), reverse=True), is_admin=user.is_superuser or user.role == "admin")
+
+
+@router.get("/admin", response_class=HTMLResponse)
+@account_page
+def admin_console(request: Request, db: Session, user: StaffUser) -> Response:
+    """DR Automation console (super user): every account and every parking of the platform."""
+    if not user.is_superuser:
+        return RedirectResponse("/parkings", status_code=303)
+    from app.api.v1.admin import organizations
+
+    return render(request, "admin.html", user, "admin", organizations=organizations(db), parkings=queries.sites(db, None))
 
 
 # --- 1. Dashboard ---------------------------------------------------------------------
 @router.get("/", response_class=HTMLResponse)
 @page
-def dashboard(request: Request, db: Session, user: StaffUser) -> HTMLResponse:
-    scope = allowed_site_ids(user)
-    sites = queries.sites(db, scope)
-    zone = _outdoor_zone(db)
+def dashboard(request: Request, db: Session, user: StaffUser, parking: dict) -> HTMLResponse:
+    scope = {parking["id"]}
+    zone = _main_zone(db, parking["id"])
     aerial = queries.bays(db, zone.id) if zone else []
-    selected_site = request.query_params.get("site")
-    site = next((s for s in sites if str(s["id"]) == selected_site), sites[0] if sites else None)
     return render(
         request, "dashboard.html", user, "dashboard",
-        kpi=queries.dashboard(db, None, scope),
-        sites=sites, site=site,
+        kpi=queries.dashboard(db, parking["id"], scope),
+        sites=queries.sites(db, allowed_site_ids(user)), site=parking,
         aerial=aerial,
         aerial_counts={k: sum(1 for b in aerial if b["status"] == k) for k in ("occupied", "alarm", "free", "reserved", "blocked")},
         alarms=queries.payment_alarms(db, scope, None, limit=6),
-        hourly=queries.tariffs(db)["current"].get("hourly"),
+        hourly=queries.effective_tariffs(db, parking["id"])["current"].get("hourly"),
     )
 
 
 # --- 2. Bay map -----------------------------------------------------------------------------
 @router.get("/plan", response_class=HTMLResponse)
 @page
-def plan(request: Request, db: Session, user: StaffUser) -> HTMLResponse:
-    scope = allowed_site_ids(user)
-    sites = queries.sites(db, scope)
-    site_id = request.query_params.get("site") or (str(sites[0]["id"]) if sites else None)
-    site = next((s for s in sites if str(s["id"]) == site_id), sites[0] if sites else None)
-    zones = queries.zones(db, site["id"]) if site else []
+def plan(request: Request, db: Session, user: StaffUser, parking: dict) -> HTMLResponse:
+    site = parking
+    zones = queries.zones(db, site["id"])
     zone_id = request.query_params.get("zone")
     zone = next((z for z in zones if str(z["id"]) == zone_id), zones[0] if zones else None)
     bays = queries.bays(db, zone["id"]) if zone else []
     flt = request.query_params.get("filter", "all")
-    bay_param = request.query_params.get("bay")
-    detail = queries.bay_detail(db, uuid.UUID(bay_param)) if bay_param else None
+    bay_id = _uuid(request.query_params.get("bay"))
+    detail = queries.bay_detail(db, bay_id) if bay_id and any(b["id"] == bay_id for b in bays) else None
     if detail is None and bays:
         first_alarm = next((b for b in bays if b["status"] == "alarm"), bays[0])
         detail = queries.bay_detail(db, first_alarm["id"])
@@ -217,43 +382,71 @@ def plan(request: Request, db: Session, user: StaffUser) -> HTMLResponse:
     counts["rate"] = round(100 * (counts["occupied"] + counts["alarm"]) / len(bays)) if bays else 0
     return render(
         request, "plan.html", user, "plan",
-        sites=sites, site=site, zones=zones, zone=zone, rows=[rows[k] for k in sorted(rows)], counts=counts,
-        flt=flt, detail=detail, show_photo=bool(zone and zone["code"] == "EXT" and site and site["code"] == "P1"),
+        sites=[site], site=site, zones=zones, zone=zone, rows=[rows[k] for k in sorted(rows)], counts=counts,
+        flt=flt, detail=detail, show_photo=bool(zone and zone["code"] == "EXT" and site["code"] == "P1"),
     )
 
 
-# --- 2b. Generate QR code ----------------------------------------------------------------------
+# --- 2b. Places and QR codes ----------------------------------------------------------------------
 @router.get("/qr-codes", response_class=HTMLResponse)
 @page
-def qr_codes(request: Request, db: Session, user: StaffUser) -> HTMLResponse:
-    scope = allowed_site_ids(user)
-    sites = queries.sites(db, scope)
-    zones = [(s, queries.zones(db, s["id"])) for s in sites]
+def qr_codes(request: Request, db: Session, user: StaffUser, parking: dict) -> HTMLResponse:
+    if parking["management_mode"] == "smart_barrier":
+        return RedirectResponse("/equipment", status_code=303)
+    scope = {parking["id"]}
+    zones = [(parking, queries.zones(db, parking["id"]))]
     rows = qr_rows(db, scope)
     selected = None
-    bay_param = request.query_params.get("bay")
-    if bay_param:
-        try:
-            found = qr_rows(db, scope, uuid.UUID(bay_param))
-        except ValueError:
-            found = []
+    bay_id = _uuid(request.query_params.get("bay"))
+    if bay_id:
+        found = qr_rows(db, scope, bay_id)
         selected = found[0] if found and found[0]["reference"] else None
     edit = None
-    if request.query_params.get("edit"):
-        try:
-            edit = queries.bay_detail(db, uuid.UUID(request.query_params["edit"]))
-        except ValueError:
-            edit = None
-    show_form = bool(request.query_params.get("new") or edit or (not rows and not selected))
+    edit_id = _uuid(request.query_params.get("edit"))
+    if edit_id:
+        found = qr_rows(db, scope, edit_id)
+        edit = queries.bay_detail(db, edit_id) if found else None
+    show_form = bool(request.query_params.get("new") or edit)
     return render(request, "qr_codes.html", user, "qr", zones=zones, rows=rows, selected=selected, edit=edit,
-                  show_form=show_form)
+                  show_form=show_form, welcome=bool(request.query_params.get("welcome")))
+
+
+# --- 2c. Presence sensors or smart barriers (with their QR codes) ------------------------------
+SQL_EQUIPMENT = """
+SELECT d.id, d.code, d.kind::text AS kind, d.label, d.address, d.live_url, d.status::text AS status, d.reference,
+       d.qr_generated_at, d.created_at, c.id AS controller_id, c.code AS controller_code, c.name AS controller_name,
+       b.id AS bay_id, b.number AS bay_number, b.reference AS bay_reference,
+       coalesce(v.status, 'free') AS bay_status
+FROM devices d JOIN controllers c ON c.id = d.controller_id
+LEFT JOIN bays b ON b.id = d.bay_id LEFT JOIN v_bay_status v ON v.bay_id = b.id
+WHERE c.site_id = :s AND d.kind IN ({kinds})
+ORDER BY d.code
+"""
+
+
+@router.get("/equipment", response_class=HTMLResponse)
+@page
+def equipment(request: Request, db: Session, user: StaffUser, parking: dict) -> HTMLResponse:
+    mode = parking["management_mode"]
+    if mode == "qr_code":
+        return RedirectResponse("/qr-codes", status_code=303)
+    kinds = "'barrier'" if mode == "smart_barrier" else "'front_presence_sensor', 'vertical_presence_sensor'"
+    items = [dict(r._mapping) for r in db.execute(text(SQL_EQUIPMENT.format(kinds=kinds)), {"s": parking["id"]})]
+    for d in items:
+        if d["kind"] == "barrier":
+            d["name"], _, d["direction"] = (d["label"] or d["code"]).partition(" · ")
+            d["direction"] = d["direction"] or "entry"
+    cabinets = db.scalars(select(Controller).where(Controller.site_id == parking["id"]).order_by(Controller.code)).all()
+    return render(request, "equipment.html", user, "equipment", items=items, cabinets=cabinets, mode=mode,
+                  welcome=bool(request.query_params.get("welcome")),
+                  can_edit=user.is_superuser or user.role in ("admin", "manager"))
 
 
 # --- 3. Reservations ----------------------------------------------------------------------
 @router.get("/reservations", response_class=HTMLResponse)
 @page
-def reservations(request: Request, db: Session, user: StaffUser) -> HTMLResponse:
-    scope = allowed_site_ids(user)
+def reservations(request: Request, db: Session, user: StaffUser, parking: dict) -> HTMLResponse:
+    scope = {parking["id"]}
     tab = request.query_params.get("tab", "ongoing")
     q = request.query_params.get("q") or None
     manual = _manual_lookup(request)
@@ -265,7 +458,7 @@ def reservations(request: Request, db: Session, user: StaffUser) -> HTMLResponse
         match = next((r for r in rows_all if _matches(r, manual)), None)
     extra = {}
     if request.query_params.get("new"):
-        extra["customers"] = queries.customer_search(db, "", limit=200)
+        extra["customers"] = queries.customer_search(db, "", limit=200, site_ids=scope, org_id=parking["organization_id"])
         extra["free_bays"] = queries.free_bays(db, scope)
     return render(
         request, "reservations.html", user, "reservations",
@@ -295,8 +488,8 @@ def _matches(row: dict, manual: dict) -> bool:
 # --- 4. Subscriptions ---------------------------------------------------------------------
 @router.get("/subscriptions", response_class=HTMLResponse)
 @page
-def subscriptions(request: Request, db: Session, user: StaffUser) -> HTMLResponse:
-    scope = allowed_site_ids(user)
+def subscriptions(request: Request, db: Session, user: StaffUser, parking: dict) -> HTMLResponse:
+    scope = {parking["id"]}
     tab = request.query_params.get("tab", "active")
     q = request.query_params.get("q") or None
     manual = _manual_lookup(request)
@@ -312,80 +505,73 @@ def subscriptions(request: Request, db: Session, user: StaffUser) -> HTMLRespons
     )
 
 
-# --- 5. Customers ----------------------------------------------------------------------------
+# --- 5. Customers (drivers) ---------------------------------------------------------------------
 @router.get("/customers", response_class=HTMLResponse)
 @page
-def customers(request: Request, db: Session, user: StaffUser) -> HTMLResponse:
+def customers(request: Request, db: Session, user: StaffUser, parking: dict) -> HTMLResponse:
+    scope, org_id = {parking["id"]}, parking["organization_id"]
     q = (request.query_params.get("q") or "").strip()
-    results = queries.customer_search(db, q) if len(q) >= 2 else []
-    customer_id = request.query_params.get("id")
+    results = queries.customer_search(db, q, site_ids=scope, org_id=org_id) if len(q) >= 2 else []
+    customer_id = _uuid(request.query_params.get("id"))
     if not customer_id and len(results) == 1:
-        customer_id = str(results[0]["id"])
+        customer_id = results[0]["id"]
     if not customer_id and not q:
-        first = queries.customer_search(db, "a", limit=1)
-        customer_id = str(first[0]["id"]) if first else None
-    profile = queries.customer_profile(db, uuid.UUID(customer_id)) if customer_id else None
-    total = db.scalar(select(func.count(Customer.id)))
+        first = queries.customer_search(db, "", limit=1, site_ids=scope, org_id=org_id)
+        customer_id = first[0]["id"] if first else None
+    profile = None
+    if customer_id and queries.customer_visible(db, customer_id, scope, org_id):
+        profile = queries.customer_profile(db, customer_id, scope)
+    total = queries.customer_count(db, scope, org_id)
     return render(request, "customers.html", user, "customers", q=q, results=results, profile=profile, total=total)
 
 
 # --- 6. Pricing --------------------------------------------------------------------------------
 @router.get("/pricing", response_class=HTMLResponse)
 @page
-def pricing(request: Request, db: Session, user: StaffUser) -> HTMLResponse:
-    data = queries.tariffs(db)
-    return render(request, "pricing.html", user, "pricing", current=data["current"], history=data["history"][:12])
+def pricing(request: Request, db: Session, user: StaffUser, parking: dict) -> HTMLResponse:
+    data = queries.effective_tariffs(db, parking["id"])
+    currency = queries.settings(db, parking["id"]).get("general.currency") or "CHF"
+    return render(request, "pricing.html", user, "pricing", current=data["current"], history=data["history"][:12],
+                  currency=currency)
 
 
 # --- 7. Reports -------------------------------------------------------------------------------
 @router.get("/reports", response_class=HTMLResponse)
 @page
-def reports_page(request: Request, db: Session, user: StaffUser) -> HTMLResponse:
-    sites = queries.sites(db, allowed_site_ids(user))
+def reports_page(request: Request, db: Session, user: StaffUser, parking: dict) -> HTMLResponse:
+    sites = [parking]
     period = request.query_params.get("period", "month")
     start, end = queries.period_bounds(period)
     return render(
         request, "reports.html", user, "reports",
-        sites=sites, site_param=request.query_params.get("site", ""), period=period, start=start, end=end,
-        report_types=list(reports.REPORTS), exports=queries.recent_exports(db),
+        sites=sites, site_param=str(parking["id"]), period=period, start=start, end=end,
+        report_types=list(reports.REPORTS), exports=queries.recent_exports(db, site_ids={parking["id"]}),
         site_names={s["id"]: s["name"] for s in sites},
     )
 
 
-# --- 8. Settings ------------------------------------------------------------------------------
+# --- 8. Settings of the parking ---------------------------------------------------------------
 @router.get("/settings", response_class=HTMLResponse)
 @page
-def settings_page(request: Request, db: Session, user: StaffUser) -> HTMLResponse:
-    section = request.query_params.get("section", "general")
+def settings_page(request: Request, db: Session, user: StaffUser, parking: dict) -> HTMLResponse:
+    sections = ["parking", "general", "control", "payments"] + (["notifications", "security"] if user.is_superuser else [])
+    section = request.query_params.get("section", "parking")
+    if section not in sections:
+        section = "parking"
     rules = {(r.event, r.channel): r.enabled for r in db.scalars(select(NotificationRule))}
     return render(
-        request, "settings.html", user, "settings",
-        section=section, values=queries.settings(db), sites=queries.sites(db, None), rules=rules,
+        request, "settings.html", user, "settings", sections=sections,
+        section=section, values=queries.settings(db, None if section == "security" else parking["id"]), rules=rules,
     )
 
 
-# --- 9. Management team ----------------------------------------------------------------------
-@router.get("/team", response_class=HTMLResponse)
-@page
-def team(request: Request, db: Session, user: StaffUser) -> HTMLResponse:
-    members = queries.team(db)
-    return render(
-        request, "team.html", user, "team",
-        members=members, permissions=PERMISSIONS, sites=queries.sites(db, None),
-        stats={
-            "active": sum(1 for m in members if m["is_active"] and not m["pending_invitation"]),
-            "admins": sum(1 for m in members if m["role"] == "admin" and m["is_active"]),
-            "agents": sum(1 for m in members if m["role"] == "agent" and m["is_active"]),
-            "pending": sum(1 for m in members if m["pending_invitation"]),
-        },
-    )
-
-
-# --- 10. Control devices ---------------------------------------------------------------------
+# --- 10. Control devices (presence sensor and smart barrier modes) ------------------------------
 @router.get("/devices", response_class=HTMLResponse)
 @page
-def devices(request: Request, db: Session, user: StaffUser) -> HTMLResponse:
-    items = queries.controllers(db, allowed_site_ids(user))
+def devices(request: Request, db: Session, user: StaffUser, parking: dict) -> HTMLResponse:
+    if parking["management_mode"] == "qr_code":
+        return RedirectResponse("/", status_code=303)
+    items = queries.controllers(db, {parking["id"]})
     flt = request.query_params.get("filter", "all")
     for c in items:
         events = c["events"]

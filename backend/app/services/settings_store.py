@@ -43,7 +43,12 @@ DEFAULTS: dict[str, object] = {
     "ble.enabled": True,
     "ble.token_hours": 24,                # validity of the identity token carried by the phone
     "ble.match_window_min": 10,           # an identification and a car detection this close belong together
+    # Multi-account platform (schema v5)
+    "payouts.fee_bp": 0,                  # platform service fee kept on the monthly transfer (basis points, 500 = 5 %)
 }
+
+# Settings only the super user may change (they apply to the whole platform, not to one parking)
+PLATFORM_KEYS = {"payouts.fee_bp", "payments.provider", "security.session_minutes", "security.require_2fa"}
 
 
 def get_all(db: Session, site_id: uuid.UUID | None = None) -> dict[str, object]:
